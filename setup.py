@@ -7,5 +7,8 @@ setup(name='dryad',
       author_email='grzadkow@ohsu.edu',
       package_dir={'dryad': ''},
       packages=['dryad'],
+      url = 'https://github.com/ohsu-comp-bio/dryad',
+      download_url = ('https://github.com/ohsu-comp-bio/'
+                      'dryad/archive/v0.1.tar.gz'),
      )
 
