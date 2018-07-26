@@ -14,7 +14,9 @@ install:
         - conda env create
         - source activate dryad
 
-script: python dryad/tests/test_cohorts.py
+script:
+        - pytest -vv tests/test_mtypes.py
+        - python tests/test_cohorts.py
 
 notifications:
         email:

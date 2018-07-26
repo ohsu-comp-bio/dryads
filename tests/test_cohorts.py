@@ -10,7 +10,7 @@ import pandas as pd
 
 
 def main():
-    expr_data = pd.read_csv("dryad/tests/resources/expr.txt.gz",
+    expr_data = pd.read_csv(os.path.join(base_dir, "resources/expr.txt.gz"),
                             sep='\t', index_col=0)
 
     cdata = UniCohort(expr_data,
@@ -21,6 +21,8 @@ def main():
         "Cohort training and testing samples should be a partition "
         "of the original samples!"
         )
+
+    print("All Cohort tests passed successfully!")
 
 
 if __name__ == '__main__':

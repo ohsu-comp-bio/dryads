@@ -1,10 +1,26 @@
 name: dryad
 channels:
+  - conda-forge
   - defaults
 dependencies:
-  - blas=1.0=mkl
-  - ca-certificates=2018.03.07=0
+  - atomicwrites=1.1.5=py35_0
+  - attrs=18.1.0=py_1
+  - ca-certificates=2018.4.16=0
   - certifi=2018.4.16=py35_0
+  - curl=7.61.0=h93b3f91_0
+  - expat=2.2.5=hfc679d8_1
+  - gettext=0.19.8.1=0
+  - git=2.18.0=pl526hbb17d3c_1
+  - krb5=1.14.6=0
+  - libiconv=1.15=h470a237_1
+  - libssh2=1.8.0=h5b517e9_2
+  - more-itertools=4.2.0=py35_1
+  - openssl=1.0.2o=0
+  - perl=5.26.2=h470a237_0
+  - pluggy=0.6.0=py_0
+  - py=1.5.4=py_0
+  - pytest=3.6.3=py35_0
+  - blas=1.0=mkl
   - intel-openmp=2018.0.3=0
   - libedit=3.1.20170329=h6b74fdf_2
   - libffi=3.2.1=hd88cf55_4
@@ -17,7 +33,6 @@ dependencies:
   - ncurses=6.1=hf484d3e_0
   - numpy=1.14.5=py35hcd700cb_0
   - numpy-base=1.14.5=py35hdbf6ddf_0
-  - openssl=1.0.2o=h20670df_0
   - pandas=0.23.3=py35h04863e7_0
   - pip=10.0.1=py35_0
   - python=3.5.5=hc3d631a_4
