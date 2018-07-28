@@ -5,7 +5,7 @@ base_dir = os.path.dirname(__file__)
 import sys
 sys.path.extend([os.path.join(base_dir, '../..')])
 
-from dryad.features.cohorts.base import UniCohort
+from dryadic.features.cohorts.base import UniCohort
 import pandas as pd
 
 

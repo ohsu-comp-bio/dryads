@@ -1,14 +1,13 @@
-from distutils.core import setup
+import setuptools
 
-setup(name='dryad',
-      version='0.1',
-      description='Prediction Cancer Phenotypes Using Mutation Dryads',
+setuptools.setup(name='dryad',
+      version='0.1a',
+      description='Prediction of Cancer Phenotypes Using Mutation Trees',
       author='Michal Radoslaw Grzadkowski',
       author_email='grzadkow@ohsu.edu',
-      package_dir={'dryad': ''},
-      packages=['dryad'],
+      packages=['dryadic.features'],
       url = 'https://github.com/ohsu-comp-bio/dryad',
       download_url = ('https://github.com/ohsu-comp-bio/'
-                      'dryad/archive/v0.1.tar.gz'),
+                      'dryad/archive/v0.1a.tar.gz'),
      )
 

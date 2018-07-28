@@ -15,8 +15,8 @@ install:
         - source activate dryad
 
 script:
-        - pytest -vv tests/test_mtypes.py
-        - python tests/test_cohorts.py
+        - pytest -vv dryadic/tests/test_mtypes.py
+        - python dryadic/tests/test_cohorts.py
 
 notifications:
         email:
