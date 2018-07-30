@@ -57,7 +57,6 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
                     :, copy_data.columns.isin(gn_counts.index)]
 
         else:
-            self.path = get_gene_neighbourhood(mut_genes)
             variants = variants.loc[variants['Gene'].isin(mut_genes), :]
 
             if copy_data is not None:

@@ -6,6 +6,7 @@ import sys
 sys.path.extend([os.path.join(base_dir, '../..')])
 
 from dryadic.features.cohorts.base import UniCohort
+from dryadic.features.cohorts import *
 import pandas as pd
 
 
