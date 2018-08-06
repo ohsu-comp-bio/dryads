@@ -7,16 +7,17 @@ import numpy as np
 class BaseMutationCohort(PresenceCohort, UniCohort):
 
     def __init__(self,
-                 expr, variants, copy_data, mut_genes=None,
-                 mut_levels=('Gene', 'Form'), top_genes=100, samp_cutoff=None,
-                 cv_prop=2.0/3, cv_seed=None):
+                 expr, variants,
+                 mut_genes=None, mut_levels=('Gene', 'Form'), top_genes=100,
+                 samp_cutoff=None, cv_prop=2.0/3, cv_seed=None):
 
         if mut_genes is None:
             self.path = None
 
             var_df = variants.loc[
-                ~variants['Form'].isin(
-                    ['HomDel', 'HetDel', 'HetGain', 'HomGain']),
+                (variants['Scale'] == 'Point')
+                | ((variants['Scale'] == 'Copy')
+                   & variants['Copy'].isin(['HomDel', 'HomGain'])),
                 :]
 
             # find how many unique samples each gene is mutated in, filter for
@@ -52,24 +53,8 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
             gn_counts = gn_counts[cutoff_mask]
             variants = variants.loc[variants['Gene'].isin(gn_counts.index), :]
 
-            if copy_data is not None:
-                copy_data = copy_data.loc[
-                    :, copy_data.columns.isin(gn_counts.index)]
-
         else:
             variants = variants.loc[variants['Gene'].isin(mut_genes), :]
-
-            if copy_data is not None:
-                copy_data = copy_data.loc[
-                    :, copy_data.columns.isin(mut_genes)]
-
-
-        # filters out genes that have both low levels of expression and low
-        # variance of expression
-        expr_mean = np.mean(expr)
-        expr_var = np.var(expr)
-        expr = expr.loc[:, ((expr_mean > np.percentile(expr_mean, 5))
-                            | (expr_var > np.percentile(expr_var, 5)))]
 
         # gets subset of samples to use for training, and split the expression
         # and variant datasets accordingly into training/testing cohorts
@@ -94,10 +79,8 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
             levels=mut_levels
             )
 
-        self.copy_data = copy_data
         self.mut_genes = mut_genes
         self.cv_prop = cv_prop
-
         super().__init__(expr, train_samps, test_samps, cv_seed)
 
     def cna_pheno(self, cna_dict, samps):

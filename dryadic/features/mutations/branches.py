@@ -1,7 +1,9 @@
 
 from functools import reduce
-from re import sub as gsub
+from operator import and_
 from itertools import product
+from itertools import permutations as perm
+from re import sub as gsub
 
 
 class MuType(object):
@@ -616,4 +618,50 @@ class MuType(object):
                           for lbl in lbls for sub_tp in tp.subkeys()]
 
         return mkeys
+
+
+class MutComb(object):
+
+    def __new__(cls, *mtypes):
+        if not all(isinstance(mtype, MuType) for mtype in mtypes):
+            raise TypeError(
+                "A MutComb object must be a combination of MuTypes!")
+
+        mtypes = list(mtypes)
+        obj = super().__new__(cls)
+
+        for i, j in perm(range(len(mtypes)), r=2):
+            if not (mtypes[i] & mtypes[j]).is_empty():
+                mtypes[j] -= mtypes[i]
+
+        mtypes = [mtype for mtype in mtypes if mtype and not mtype.is_empty()]
+
+        if mtypes:
+            if len(mtypes) == 1:
+                return mtypes[0]
+            else:
+                obj.mtypes = frozenset(mtypes)
+                return obj
+
+    def mtype_apply(self, each_fx, comb_fx):
+        each_list = [each_fx(mtype) for mtype in self.mtypes]
+        return reduce(comb_fx, each_list)
+
+    def __repr__(self):
+        return self.mtype_apply(repr, lambda x, y: x + ' AND ' + y)
+
+    def __str__(self):
+        return self.mtype_apply(str, lambda x, y: x + ' & ' + y)
+
+    def __hash__(self):
+        value = 0x213129
+
+        return value + self.mtype_apply(
+            hash,
+            lambda x, y: (x ^ y + eval(hex((int(value) * 1003)
+                                           & 0xFFFFFFFF)[:-1]))
+            )
+
+    def get_samples(self, mtree):
+        return self.mtype_apply(lambda x: x.get_samples(mtree), and_)
 

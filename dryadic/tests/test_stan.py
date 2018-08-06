@@ -7,7 +7,7 @@ sys.path.extend([os.path.join(base_dir, '../..')])
 
 from dryadic.features.cohorts import BaseMutationCohort
 from dryadic.features.mutations import MuType
-from dryadic.learning.utilities.pipelines import PresencePipe
+from dryadic.learning.pipelines import PresencePipe
 from dryadic.learning.stan.base import StanOptimizing
 from dryadic.learning.stan.logistic import *
 
@@ -38,8 +38,8 @@ def main():
     mut_data = pd.read_csv(os.path.join(data_dir, "variants.txt.gz"),
                            sep='\t', index_col=0)
 
-    cdata = BaseMutationCohort(expr_data, mut_data, copy_data=None,
-                               mut_genes=['TP53'], cv_prop=0.8, cv_seed=987)
+    cdata = BaseMutationCohort(expr_data, mut_data, mut_genes=['TP53'],
+                               cv_prop=0.8, cv_seed=987)
     test_mtype = MuType({('Gene', 'TP53'): None})
 
     clf = StanPipe()

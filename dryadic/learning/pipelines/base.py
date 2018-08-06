@@ -7,8 +7,8 @@ phenotypic information from -omic datasets.
 
 """
 
-from .cross_validation import (OmicRandomizedCV, cross_val_predict_omic,
-                               OmicShuffleSplit)
+from ..utilities.cross_validation import (
+    OmicRandomizedCV, cross_val_predict_omic, OmicShuffleSplit)
 
 import numpy as np
 from numbers import Number

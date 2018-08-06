@@ -16,6 +16,7 @@ install:
 script:
         - pytest -vv dryadic/tests/test_mtypes.py
         - python dryadic/tests/test_cohorts.py
+        - python dryadic/tests/test_pipes.py
         - python dryadic/tests/test_stan.py
 
 notifications:
