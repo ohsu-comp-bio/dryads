@@ -5,6 +5,14 @@ from scipy.special import expit
 
 
 class BaseLogistic(StanClassifier):
+    """Bayesian logistic linear regression.
+
+    Parameters:
+        alpha (float): Regularization parameter for feature coefficients.
+                       Lower values will put a higher penalty on coefficients
+                       that are further from zero.
+ 
+    """
 
     model_name = "BaseLogisticClassifier"
 

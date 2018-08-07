@@ -5,6 +5,12 @@ import pystan
 
 
 class BaseStan(BaseEstimator):
+    """Abstract class for implementing Stan models for -omic prediction.
+
+    Parameters:
+        model_code (str): A Bayesian model represented in the Stan language.
+
+    """
 
     model_name = "BasePredict"
 

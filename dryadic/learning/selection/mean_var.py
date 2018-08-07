@@ -4,6 +4,13 @@ from sklearn.base import TransformerMixin
 
 
 class SelectMeanVar(TransformerMixin):
+    """Filter out genes with low expression or low variance of expression.
+
+    Parameters:
+        mean_perc (float, optional): Cutoff percentile for expression mean.
+        var_perc (float, optional): Cutoff percentile for expression variance.
+
+    """
 
     def __init__(self, mean_perc=99, var_perc=99):
         self.mean_perc = mean_perc

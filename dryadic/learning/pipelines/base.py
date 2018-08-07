@@ -351,13 +351,9 @@ class OmicPipe(Pipeline):
 
     def get_coef(self):
         """Get the fitted coefficient for each gene in the -omic dataset."""
-
-        if self.genes is None:
-            raise PipelineError("Gene coefficients only available once "
-                                "the pipeline has been fit!")
-
-        else:
-            return {gn: 0 for gn in self.genes}
+        
+        raise NotImplementedError("-omic pipelines must implement their own "
+                                  "<get_coef> methods wherever possible!")
 
 
 class PresencePipe(OmicPipe):
@@ -426,6 +422,10 @@ class LinearPipe(OmicPipe):
     """
 
     def get_coef(self):
+        if self.genes is None:
+            raise PipelineError("Gene coefficients only available once "
+                                "the pipeline has been fit!")
+
         return {gene: coef for gene, coef in
                 zip(self.genes, self.named_steps['fit'].coef_.flatten())}
 

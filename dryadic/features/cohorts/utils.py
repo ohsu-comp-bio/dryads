@@ -57,7 +57,8 @@ def match_tcga_samples(*samples):
     # lists, find the sample in each list closest to the primary tumour type
     if len(partics_indx) > len(samps_match):
         choose_indx = [
-            tuple(ix[np.argmin(typ)] for ix, typ in zip(indx, types))
+            tuple(ix[np.argmin([typ[i] for i in ix])]
+                  for ix, typ in zip(indx, types))
             for indx in partics_indx if any(len(ix) > 1 for ix in indx)
             ]
 

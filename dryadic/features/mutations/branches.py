@@ -621,6 +621,9 @@ class MuType(object):
 
 
 class MutComb(object):
+    """A combination of mutations simultaenously present in a sample.
+
+    """
 
     def __new__(cls, *mtypes):
         if not all(isinstance(mtype, MuType) for mtype in mtypes):
@@ -630,15 +633,20 @@ class MutComb(object):
         mtypes = list(mtypes)
         obj = super().__new__(cls)
 
+        # removes overlap between the given mutations
         for i, j in perm(range(len(mtypes)), r=2):
             if not (mtypes[i] & mtypes[j]).is_empty():
                 mtypes[j] -= mtypes[i]
 
+        # removes mutations that are covered by other given mutations
         mtypes = [mtype for mtype in mtypes if mtype and not mtype.is_empty()]
 
+        # if only one unique mutation was given, return that mutation...
         if mtypes:
             if len(mtypes) == 1:
                 return mtypes[0]
+
+            # ...otherwise, return the combination of the given mutations
             else:
                 obj.mtypes = frozenset(mtypes)
                 return obj
@@ -663,5 +671,5 @@ class MutComb(object):
             )
 
     def get_samples(self, mtree):
-        return self.mtype_apply(lambda x: x.get_samples(mtree), and_)
+        return self.mtype_apply(lambda mtype: mtype.get_samples(mtree), and_)
 
