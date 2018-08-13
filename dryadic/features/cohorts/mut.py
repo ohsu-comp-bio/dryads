@@ -1,5 +1,5 @@
 
-from .base import UniCohort, PresenceCohort
+from .base import UniCohort, PresenceCohort, TransferCohort
 from ..mutations import *
 import numpy as np
 
@@ -194,4 +194,143 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
                 )
 
         return stat_list
+
+
+class BaseTransferMutationCohort(PresenceCohort, TransferCohort):
+    """Mutiple datasets used to predict mutations using transfer learning.
+
+    Args:
+        expr_dict (:obj:`dict` of :obj:`pd.DataFrame`)
+        variant_dict (:obj:`dict` of :obj:`pd.DataFrame`)
+
+    """
+
+    def __init__(self,
+                 expr_dict, variant_dict,
+                 mut_genes=None, mut_levels=('Gene', 'Form'), top_genes=100,
+                 samp_cutoff=None, cv_prop=2.0/3, cv_seed=None):
+
+        if mut_genes is None:
+            self.path = None
+
+            var_df = {coh: var.loc[(var['Scale'] == 'Point')
+                                   | ((var['Scale'] == 'Copy')
+                                      & var['Copy'].isin(
+                                          ['HomDel', 'HomGain'])), :]
+                      for coh, var in variant_dict.items()}
+
+            gn_counts = {coh: var.groupby(by='Gene').Sample.nunique()
+                         for coh, var in var_df.items()}
+
+            if samp_cutoff is None:
+                use_counts = {
+                    coh: gn_cnts.sort_values(ascending=False)[:top_genes]
+                    for coh, gn_cnts in gn_counts.items()
+                    }
+
+            elif isinstance(samp_cutoff, int):
+                use_counts = {coh: gn_cnts[gn_cnts >= samp_cutoff]
+                              for coh, gn_cnts in gn_counts.items()}
+
+            elif isinstance(samp_cutoff, float):
+                use_counts = {
+                    coh: gn_cnts[
+                        gn_cnts >= samp_cutoff * len(use_samples[coh])]
+                    for coh, gn_cnts in gn_counts.items()
+                    }
+
+            elif hasattr(samp_cutoff, '__getitem__'):
+                if isinstance(samp_cutoff[0], int):
+                    use_counts = {
+                        coh: gn_cnts[(samp_cutoff[0] <= gn_cnts)
+                                     & (samp_cutoff[1] >= gn_cnts)]
+                        for coh, gn_cnts in gn_counts.items()
+                        }
+
+                elif isinstance(samp_cutoff[0], float):
+                    use_counts = {
+                        coh: gn_cnts[(samp_cutoff[0]
+                                      * len(use_samples[coh]) <= gn_cnts)
+                                     & (samp_cutoff[1]
+                                        * len(use_samples[coh]) >= gn_cnts)]
+                        for coh, gn_cnts in gn_counts.items()
+                        }
+
+            else:
+                raise ValueError("Unrecognized `samp_cutoff` argument!")
+
+            use_gns = reduce(and_,
+                             [cnts.index for cnts in use_counts.values()])
+            variants = {coh: var.loc[var['Gene'].isin(use_gns), :]
+                        for coh, var in variants.items()}
+
+        else:
+            variants = {coh: var.loc[var['Gene'].isin(mut_genes), :]
+                        for coh, var in variant_dict.items()}
+
+        split_samps = {coh: self.split_samples(cv_seed, cv_prop, expr.index)
+                       for coh, expr in expr_dict.items()}
+
+        train_samps = {coh: samps[0] for coh, samps in split_samps.items()}
+        test_samps = {coh: samps[1] for coh, samps in split_samps.items()}
+
+        self.train_mut = dict()
+        self.test_mut = dict()
+        for coh in expr_dict:
+
+            if test_samps[coh]:
+                self.test_mut[coh] = MuTree(
+                    muts=variants[coh].loc[
+                         variants[coh]['Sample'].isin(test_samps[coh]), :],
+                    levels=mut_levels
+                    )
+
+            else:
+                test_samps[coh] = None
+
+            self.train_mut[coh] = MuTree(
+                muts=variants[coh].loc[
+                     variants[coh]['Sample'].isin(train_samps[coh]), :],
+                levels=mut_levels
+                )
+
+        self.mut_genes = mut_genes
+        self.cv_prop = cv_prop
+        super().__init__(expr_dict, train_samps, test_samps, cv_seed)
+
+    @classmethod
+    def combine_cohorts(cls, *cohorts, **named_cohorts):
+        new_cohort = TransferCohort.combine_cohorts(*cohorts, **named_cohorts)
+        new_cohort.__class__ = cls
+
+        new_cohort.train_mut = dict()
+        new_cohort.test_mut = dict()
+
+        for cohort in cohorts:
+            new_cohort.train_mut[cohort.cohort] = cohort.train_mut
+
+            if hasattr(cohort, "test_mut"):
+                new_cohort.test_mut[cohort.cohort] = cohort.test_mut
+
+        for lbl, cohort in named_cohorts.items():
+            new_cohort.train_mut[lbl] = cohort.train_mut
+
+            if hasattr(cohort, "test_mut"):
+                new_cohort.test_mut[lbl] = cohort.test_mut
+
+        return new_cohort
+
+    def train_pheno(self, mtype, samps=None):
+        if samps is None:
+            samps = self.train_samps
+
+        return {coh: self.train_mut[coh].status(samps[coh], mtype)
+                for coh in samps}
+
+    def test_pheno(self, mtype, samps=None):
+        if samps is None:
+            samps = self.test_samps
+
+        return {coh: self.test_mut[coh].status(samps[coh], mtype)
+                for coh in samps}
 
