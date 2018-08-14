@@ -1,5 +1,5 @@
 
-from .mut import BaseMutationCohort
+from .mut import BaseMutationCohort, BaseTransferMutationCohort
 
-__all__ = ['BaseMutationCohort']
+__all__ = ['BaseMutationCohort', 'BaseTransferMutationCohort']
 
