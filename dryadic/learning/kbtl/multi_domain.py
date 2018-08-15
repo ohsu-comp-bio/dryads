@@ -712,9 +712,3 @@ class MultiDomainAsym(BaseMultiDomain):
 
         return y_logl
 
-    def get_params(self, deep=True):
-        return {'sigma_h': self.sigma_h,
-                'prec_distr': self.prec_distr,
-                'latent_features': self.R,
-                'margin': self.margin}
-

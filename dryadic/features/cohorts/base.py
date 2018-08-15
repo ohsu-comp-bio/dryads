@@ -613,11 +613,21 @@ class TransferCohort(Cohort):
 
     @abstractmethod
     def train_pheno(self, pheno, samps=None):
-        """Returns the values for a phenotype in the training sub-cohort."""
+        """Returns the values corresponding to a given phenotype for the
+           training samples in each of the datasets.
+
+        Returns:
+            pheno_dict (dict)
+        """
 
     @abstractmethod
     def test_pheno(self, pheno, samps=None):
-        """Returns the values for a phenotype in the testing sub-cohort."""
+        """Returns the values corresponding to a given phenotype for the
+           testing samples in each of the datasets.
+
+        Returns:
+            pheno_dict (dict)
+        """
 
     def parse_pheno(self, pheno, samps):
 

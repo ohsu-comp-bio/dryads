@@ -79,11 +79,15 @@ def get_gencode(annot_file):
     """Gets annotation data for protein-coding genes on non-sex
        chromosomes from a Gencode file.
 
-    Returns
-    -------
-    annot : dict
-        Dictionary with keys corresponding to Ensembl gene IDs and values
-        consisting of dicts with annotation fields.
+    Args:
+        annot_file (str): A .gtf file, downloaded from eg.
+                          www.gencodegenes.org/releases/22.html
+
+    Returns:
+        gn_annot (dict): Dictionary with keys corresponding to Ensembl gene
+                         IDs and values consisting of dicts with
+                         annotation fields.
+
     """
     annot = pd.read_csv(annot_file, usecols=[0, 2, 3, 4, 8],
                         names=['Chr', 'Type', 'Start', 'End', 'Info'],
