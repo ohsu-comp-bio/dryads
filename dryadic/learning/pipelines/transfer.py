@@ -125,9 +125,9 @@ class TransferPipe(OmicPipe):
 
         return self.score_cohorts(test_omics, test_pheno)
 
-    @staticmethod
-    def parse_preds(preds):
-        return {lbl: np.array(x).flatten() for lbl, x in preds.items()}
+    #@staticmethod
+    #def parse_preds(preds):
+    #    return {lbl: np.array(x).flatten() for lbl, x in preds.items()}
 
     def score_omic(self, actual_omic, pred_omic):
         """Parses and scores the predictions for a set of phenotypes."""

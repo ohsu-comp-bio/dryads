@@ -320,17 +320,89 @@ class BaseTransferMutationCohort(PresenceCohort, TransferCohort):
 
         return new_cohort
 
-    def train_pheno(self, mtype, samps=None):
+    def train_pheno(self, pheno, samps=None):
+        """Gets the mutation status of samples in the training cohort.
+
+        Args:
+            pheno (:obj:`MuType` or :obj:`list` of :obj:`MuType`)
+                A particular type of mutation or list of types.
+            samps (:obj:`list` of :obj:`str`, optional)
+                A list of samples, of which those not in the training cohort
+                will be ignored. Defaults to using all the training samples.
+
+        Returns:
+            stat_list (:obj:`list` of :obj:`bool`)
+
+        """
+
+        # use all the training samples if no list of samples is provided
         if samps is None:
-            samps = self.train_samps
+            samps = {coh: sorted(smps)
+                     for coh, smps in self.train_samps.items()}
 
-        return {coh: self.train_mut[coh].status(samps[coh], mtype)
-                for coh in samps}
+        # otherwise, filter out the provided samples
+        # not in the training cohort
+        else:
+            samps = {coh: sorted(set(samps[coh]) & self.train_samps[coh])
+                     for coh in self.train_samps}
+ 
+        if isinstance(pheno, MuType) or isinstance(pheno, MutComb):
+            stat_list = {coh: self.train_mut[coh].status(samps[coh], pheno)
+                         for coh in self.train_samps}
 
-    def test_pheno(self, mtype, samps=None):
+        elif isinstance(tuple(pheno)[0], MuType):
+            stat_list = {coh: [self.train_mut[coh].status(samps[coh], phn)
+                               for phn in pheno]
+                         for coh in self.train_samps}
+
+        else:
+            raise TypeError(
+                "A MutationCohort accepts only MuTypes, CNA dictionaries, or "
+                "lists thereof as training phenotypes!"
+                )
+
+        return stat_list
+
+    def test_pheno(self, pheno, samps=None):
+        """Gets the mutation status of samples in the testing cohort.
+
+        Args:
+            pheno (:obj:`MuType` or :obj:`list` of :obj:`MuType`)
+                A particular type of mutation or list of types.
+            samps (:obj:`list` of :obj:`str`, optional)
+                A list of samples, of which those not in the testing cohort
+                will be ignored. Defaults to using all the testing samples.
+
+        Returns:
+            stat_list (:obj:`list` of :obj:`bool`)
+
+        """
+
+        # use all the testing samples if no list of samples is provided
         if samps is None:
-            samps = self.test_samps
+            samps = {coh: sorted(smps)
+                     for coh, smps in self.test_samps.items()}
 
-        return {coh: self.test_mut[coh].status(samps[coh], mtype)
-                for coh in samps}
+        # otherwise, filter out the provided samples
+        # not in the testing cohort
+        else:
+            samps = {coh: sorted(set(samps[coh]) & self.test_samps[coh])
+                     for coh in self.test_samps}
+ 
+        if isinstance(pheno, MuType) or isinstance(pheno, MutComb):
+            stat_list = {coh: self.test_mut[coh].status(samps[coh], pheno)
+                         for coh in self.test_samps}
+
+        elif isinstance(tuple(pheno)[0], MuType):
+            stat_list = {coh: [self.test_mut[coh].status(samps[coh], phn)
+                               for phn in pheno]
+                         for coh in self.test_samps}
+
+        else:
+            raise TypeError(
+                "A MutationCohort accepts only MuTypes, CNA dictionaries, or "
+                "lists thereof as testing phenotypes!"
+                )
+
+        return stat_list
 

@@ -162,17 +162,9 @@ class OmicPipe(Pipeline):
                              include_genes, exclude_genes)[0]
             )
 
-    def predict_base(self, omic_data):
-        """Applies the prediction method specific to the pipeline."""
-        return self.predict(omic_data)
-
-    @staticmethod
-    def parse_preds(preds):
-        return np.array(preds).flatten()
-
     def predict_omic(self, omic_data):
         """Gets a vector of phenotype predictions for an -omic dataset."""
-        return self.parse_preds(self.predict_base(omic_data))
+        return self.predict(omic_data)
 
     @classmethod
     def extra_fit_params(cls, cohort):
@@ -186,6 +178,9 @@ class OmicPipe(Pipeline):
     @classmethod
     def extra_tune_params(cls, cohort):
         return cls.extra_fit_params(cohort)
+
+    def parse_preds(self, pred_omic):
+        return pred_omic
 
     def score(self, X, y=None, sample_weight=None):
         """Get the accuracy of the classifier in predicting phenotype values.
@@ -207,18 +202,17 @@ class OmicPipe(Pipeline):
         Returns:
             S (float): A score corresponding to prediction accuracy.
                 The way this score is calculated is determined by the
-                pipeline's `score_pheno` method.
+                pipeline's `score_omic` method.
 
         """
-        return self.score_omic(y, self.predict_omic(X))
+        return self.score_omic(y, self.parse_preds(self.predict_omic(X)))
 
     def score_omic(self, actual_omic, pred_omic):
-        """Parses and scores the predictions for a set of phenotypes."""
-        return self.score_pheno(actual_omic.flatten(), pred_omic)
+        """Scores the predictions for a set of phenotypes."""
+        return self.score_pheno(actual_omic, pred_omic)
 
-    @staticmethod
-    def score_pheno(actual_pheno, pred_pheno):
-        """Scores the predicted values for a single phenotype."""
+    def score_pheno(self, actual_pheno, pred_pheno):
+        """Scores the predictions for a single phenotype."""
         raise NotImplementedError("An -omic pipeline used for prediction "
                                   "must implement the <score_pheno> method!")
 
@@ -382,25 +376,40 @@ class PresencePipe(OmicPipe):
             elif len(true_indx) > 1:
                 raise PipelineError("Classifier has multiple <True> classes!")
 
-            parse_preds = [scrs[true_indx[0]] for scrs in preds]
+            parse_preds = np.array([scrs[true_indx[0]] for scrs in preds])
 
         else:
             parse_preds = preds
 
         return parse_preds
 
-    def predict_base(self, omic_data):
+    def predict_omic(self, omic_data):
         return self.predict_proba(omic_data)
 
     @staticmethod
     def score_pheno(actual_pheno, pred_pheno):
-        pheno_score = 0.5
+        if len(pred_pheno.shape) != len(actual_pheno.shape):
+            pred_pheno = pred_pheno.reshape(actual_pheno.shape)
 
-        if (len(np.unique(actual_pheno)) > 1
-                and len(np.unique(pred_pheno)) > 1):
-            pheno_score = roc_auc_score(actual_pheno, pred_pheno)
+        if actual_pheno.shape != pred_pheno.shape:
+            raise PipelineError("This pipeline predicts phenotypes with "
+                                "shape {} that do not conform to the "
+                                "original phenotype shape {}!".format(
+                                    pred_pheno.shape, actual_pheno.shape))
 
-        return pheno_score
+        if len(actual_pheno.shape) == 1:
+            actual_pheno = actual_pheno.reshape(-1, 1)
+            pred_pheno = pred_pheno.reshape(-1, 1)
+
+        pheno_scores = [0.5 for _ in range(actual_pheno.shape[1])]
+        for i in range(actual_pheno.shape[1]):
+
+            if (len(np.unique(actual_pheno[:, i])) > 1
+                    and len(np.unique(pred_pheno[:, i])) > 1):
+                pheno_scores[i] = roc_auc_score(actual_pheno[:, i],
+                                                pred_pheno[:, i])
+
+        return min(pheno_scores)
 
 
 class ValuePipe(OmicPipe):
@@ -410,10 +419,28 @@ class ValuePipe(OmicPipe):
 
     @staticmethod
     def score_pheno(actual_pheno, pred_pheno):
-        if np.var(actual_pheno) == 0 or np.var(pred_pheno) == 0:
-            return 0
-        else:
-            return pearsonr(actual_pheno, pred_pheno)[0]
+        if len(pred_pheno.shape) != len(actual_pheno.shape):
+            pred_pheno = pred_pheno.reshape(actual_pheno.shape)
+
+        if actual_pheno.shape != pred_pheno.shape:
+            raise PipelineError("This pipeline predicts phenotypes with "
+                                "shape {} that do not conform to the "
+                                "original phenotype shape {}!".format(
+                                    pred_pheno.shape, actual_pheno.shape))
+
+        if len(actual_pheno.shape) == 1:
+            actual_pheno = actual_pheno.reshape(-1, 1)
+            pred_pheno = pred_pheno.reshape(-1, 1)
+
+        pheno_scores = [0 for _ in range(actual_pheno.shape[1])]
+        for i in range(actual_pheno.shape[1]):
+            
+            if np.var(actual_pheno[:, i]) > 0:
+                if np.var(pred_pheno[:, i]) > 0:
+                    pheno_scores[i] = pearsonr(actual_pheno[:, i],
+                                               pred_pheno[:, i])[0]
+
+        return min(pheno_scores)
 
 
 class LinearPipe(OmicPipe):
