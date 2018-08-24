@@ -1,16 +1,16 @@
 
-"""Using transfer learning to predict one or more labels in a single domain.
+"""Using transfer learning to predict phenotypes in multiple domains.
 
 This module contains classes corresponding to particular versions of Bayesian
-transfer learning algorithms for predicting binary labels in one or more
-tasks. Learning is done within one domain using one or more kernels to map the
-decision boundary to higher dimensions using pathway-based feature selection.
+transfer learning algorithms for predicting binary labels in multiple
+domains, also called tasks. Learning is done across domains using one or more
+kernels to map the original features to a lower-dimensional space, optionally
+using pathway-based feature selection. These kernels are then mapped to a
+small number of hidden features that are shared between the tasks, which are
+in turn mapped to output labels using linear classification weights.
 Optimizing over the set of unknown parameters and latent variables in each
 model is done using variational inference, in which the posterior probability
 of each is approximated analytically.
-
-Authors: Michal Grzadkowski <grzadkow@ohsu.edu>
-         Hannah Manning <manningh@ohsu.edu>
 
 """
 
@@ -70,6 +70,22 @@ class BaseMultiDomain(BaseBayesianTransfer):
             self (MultiVariant): The fitted instance of the classifier.
 
         """
+
+        # makes sure training labels are of the correct format
+        if not isinstance(y, dict):
+            raise TypeError("Output labels must be given as a dictionary "
+                            "with an entry for each task!")
+
+        for lbl, yvals in y.items():
+            if isinstance(yvals, list) or len(yvals.shape) == 1:
+                if not all(y in [True, False] for y in yvals):
+                    raise TypeError("Output label values from task {} must "
+                                    "all be boolean!".format(lbl))
+
+            elif not np.isin(yvals, [True, False]).all():
+                raise TypeError("Output label array from task {} must "
+                                "be of type boolean!".format(lbl))
+
         if expr_genes is None:
             expr_genes = {lbl: None for lbl in X}
         if path_keys is None:
@@ -79,14 +95,14 @@ class BaseMultiDomain(BaseBayesianTransfer):
         self.expr_genes = expr_genes
         self.path_keys = path_keys
 
-        # computes the kernel matrices and concatenates them, gets number of
-        # training samples and total number of kernel features
+        # calculates the kernels for the training datasets
         self.kernel_mats = {
             lbl: self.compute_kernels(xmat, expr_genes=expr_genes[lbl],
                                       path_keys=path_keys[lbl])
             for lbl, xmat in X.items()
             }
 
+        # pre-computes values used recurrently in inference calculations
         self.kkt_mats = {lbl: kern_mat @ kern_mat.transpose()
                          for lbl, kern_mat in self.kernel_mats.items()}
         self.kern_sizes = {lbl: kern_mat.shape[0]
@@ -94,15 +110,7 @@ class BaseMultiDomain(BaseBayesianTransfer):
         self.samp_counts = {lbl: kern_mat.shape[1]
                               for lbl, kern_mat in self.kernel_mats.items()}
 
-        # makes sure training labels are of the correct format
-        if not isinstance(y, dict):
-            raise TypeError("Output labels must be given as a dictionary "
-                            "with an entry for each task!")
-
-        if not all(all(y in [True, False] for y in yvals)
-                   for yvals in y.values()):
-            raise TypeError("Output label values must all be boolean!")
-
+        # casts boolean training labels to 2-d arrays of floats
         y_dict = {lbl: np.array(yvals, dtype=np.float) * 2 - 1
                   for lbl, yvals in y.items()}
         y_dict = {
@@ -110,68 +118,70 @@ class BaseMultiDomain(BaseBayesianTransfer):
             for lbl, yvals in y_dict.items()
             }
 
-        feat_counts = {y.shape[1] for y in y_dict.values()}
-        if len(feat_counts) > 1:
+        # checks that the number of features to predict in each task is the
+        # same across all tasks
+        pheno_counts = {y.shape[1] for y in y_dict.values()}
+        if len(pheno_counts) > 1:
             raise ValueError("Each task must involve the same number of "
                              "output features!")
 
-        # initializes matrix of posterior distributions of precision priors
-        # for the projection matrix
+        # initializes matrices of posterior distributions of the precision
+        # priors for the projection matrices
         self.lambda_mats = {
-            lbl: {'alpha': (np.zeros((kern_size, self.R))
-                            + self.prec_distr[0] + 0.5),
-                  'beta': (np.zeros((kern_size, self.R))
-                           + self.prec_distr[1])}
+            lbl: {'alpha': np.full((kern_size, self.R),
+                                   self.prec_distr[0] + 0.5),
+                  'beta': np.full((kern_size, self.R), self.prec_distr[1])}
             for lbl, kern_size in self.kern_sizes.items()
             }
 
-        self.feat_count = tuple(feat_counts)[0]
+        self.pheno_count = tuple(pheno_counts)[0]
         self.output_mats = self.init_output_mat(y_dict)
 
         # initializes posteriors of precision priors for coupled
         # classification matrices
         self.weight_prior = {
-            'alpha': np.zeros((self.R + 1, self.feat_count)) + 1.5,
-            'beta': np.zeros((self.R + 1, self.feat_count)) + 1.0
+            'alpha': np.full((self.R + 1, self.pheno_count),
+                             self.prec_distr[0] + 0.5),
+            'beta': np.full((self.R + 1, self.pheno_count),
+                            self.prec_distr[1])
             }
 
         self.weight_mat = {
-            'mu': np.vstack((np.zeros((1, self.feat_count)),
-                             np.random.randn(self.R, self.feat_count))),
-            'sigma': np.tile(np.eye(self.R + 1), (self.feat_count, 1, 1))
+            'mu': np.vstack((np.zeros((1, self.pheno_count)),
+                             np.random.randn(self.R, self.pheno_count))),
+            'sigma': np.tile(np.eye(self.R + 1), (self.pheno_count, 1, 1))
             }
 
+        # initializes posteriors of the task-specific projection matrices
         self.A_mats = {lbl: {'mu': np.random.randn(kern_size, self.R),
                              'sigma': np.array(np.eye(kern_size)[..., None]
                                                * ([1] * self.R)).transpose()}
                        for lbl, kern_size in self.kern_sizes.items()}
 
+        # initializes posteriors of latent representations of the data points
         self.H_mats = {lbl: {'mu': np.random.randn(self.R, samp_count),
                              'sigma': np.eye(self.R)}
                        for lbl, samp_count in self.samp_counts.items()}
 
-
-        # proceeds with inference using variational Bayes for the given
-        # number of iterations
+        # proceeds with inference using variational Bayes until the maximum
+        # number of iterations is reached or convergence is detected
         cur_iter = 1
         old_log_like = float('-inf')
         log_like_stop = False
-
         while cur_iter <= 10 and not log_like_stop:
+
+            # update posterior of precision priors for the projection matrices
             new_lambdas = {
                 lbl: self.update_precision_priors(
                     self.lambda_mats[lbl], self.A_mats[lbl], *self.prec_distr)
                 for lbl in X
                 }
-
-            new_projs = self.update_projection(new_lambdas)
-            new_latents = self.update_latent(new_projs, y_dict)
+            new_projs, new_latents = self.update_latents(new_lambdas)
 
             new_weight_prior = self.update_precision_priors(
                 self.weight_prior, self.weight_mat, *self.prec_distr)
             new_weights = self.update_weights(new_weight_prior, new_latents)
-            new_outputs = self.update_output(new_latents, new_weights,
-                                             y_dict)
+            new_outputs = self.update_output(new_latents, new_weights, y_dict)
 
             self.lambda_mats = new_lambdas
             self.A_mats = new_projs
@@ -183,8 +193,9 @@ class BaseMultiDomain(BaseBayesianTransfer):
 
             # every ten update iterations, check the likelihood of the model
             # given current latent variable distributions
-            if (cur_iter % 10) == 0:
+            if (cur_iter % 2) == 0:
                 cur_log_like = self.log_likelihood(y_dict)
+                print(cur_log_like)
 
                 if (cur_log_like < (old_log_like + self.stop_tol)
                         and cur_iter > 10):
@@ -210,13 +221,13 @@ class BaseMultiDomain(BaseBayesianTransfer):
 
         h_mus = {lbl: self.A_mats[lbl]['mu'].transpose() @ kern_dists[lbl]
                  for lbl in X}
-        f_mus = {lbl: np.zeros((X[lbl].shape[0], self.feat_count))
+        f_mus = {lbl: np.zeros((X[lbl].shape[0], self.pheno_count))
                  for lbl in X}
-        f_sigmas = {lbl: np.zeros((X[lbl].shape[0], self.feat_count))
+        f_sigmas = {lbl: np.zeros((X[lbl].shape[0], self.pheno_count))
                     for lbl in X}
 
         for lbl in X:
-            for i in range(self.feat_count):
+            for i in range(self.pheno_count):
                 f_mus[lbl][:, i] = np.dot(
                     np.vstack((np.ones(X[lbl].shape[0]),
                                h_mus[lbl])).transpose(),
@@ -236,11 +247,11 @@ class BaseMultiDomain(BaseBayesianTransfer):
 
     def predict_proba(self, X):
         f_mus, f_sigmas = self.predict_labels(X)
-        pred_dict = {lbl: np.zeros((X[lbl].shape[0], self.feat_count))
+        pred_dict = {lbl: np.zeros((X[lbl].shape[0], self.pheno_count))
                      for lbl in X}
 
         for lbl in X:
-            for i in range(self.feat_count):
+            for i in range(self.pheno_count):
                 pred_p, pred_n = self.get_pred_class_probs(
                     f_mus[lbl][:, i], f_sigmas[lbl][:, i])
                 pred_dict[lbl][:, i] = pred_p / (pred_p + pred_n)
@@ -252,21 +263,41 @@ class BaseMultiDomain(BaseBayesianTransfer):
         """Gets the predicted probability of falling into output classes."""
 
     @abstractmethod
-    def init_output_mat(self, y_list):
+    def init_output_mat(self, y_dict):
         """Initialize posterior distributions of the output predictions."""
 
-    def update_projection(self, new_priors):
+    def update_latents(self, new_priors):
         """Updates posterior distributions of projection matrices.
 
         Args:
+            new_priors (dict): Projection precision prior posteriors.
+                These priors have an entry for each task, each of which
+                consists of paired gamma-distribution matrices of shape
+                (n_samples x n_latents).
 
         Returns:
+            new_projections (dict): Updated projection posteriors.
+                These priors have an entry for each task, each of which
+                consists of paired normal-distribution matrices of shape
+                (n_samples x n_latents) for the means and (n_latents
+                x n_samples x n_samples) for the variances.
+
+            new_latents (dict): Updated latent representation posteriors.
+                These priors have an entry for each task, each of which
+                consists of paired normal-distribution matrices of shape
+                (n_latents x n_samples) for the means and (n_latents
+                x n_latents) for the variances.
 
         """
-        new_variables = {
+        new_projections = {
             lbl: {'mu': np.zeros(self.A_mats[lbl]['mu'].shape),
                   'sigma': np.zeros(self.A_mats[lbl]['sigma'].shape)}
             for lbl in new_priors
+            }
+
+        new_latents = {
+            lbl: {k: np.zeros(hmat.shape) for k, hmat in hdict.items()}
+            for lbl, hdict in self.H_mats.items()
             }
 
         prior_expects = {
@@ -276,86 +307,82 @@ class BaseMultiDomain(BaseBayesianTransfer):
 
         for lbl in new_priors:
             for i in range(self.R):
-                new_variables[lbl]['sigma'][i, :, :] = np.linalg.inv(
+                new_projections[lbl]['sigma'][i, :, :] = np.linalg.inv(
                     np.diag(prior_expects[lbl][i])
                     + (self.kkt_mats[lbl] / self.sigma_h)
                     )
  
-                new_variables[lbl]['mu'][:, i] = np.dot(
-                    new_variables[lbl]['sigma'][i, :, :],
+                new_projections[lbl]['mu'][:, i] = np.dot(
+                    new_projections[lbl]['sigma'][i, :, :],
                     np.dot(self.kernel_mats[lbl],
-                           self.H_mats[lbl]['mu'][i, :].transpose())
+                           self.H_mats[lbl]['mu'][i, :])
                     / self.sigma_h
                     )
 
-        return new_variables
-
-    def update_latent(self, variable_mats, y_dict):
-        """Updates latent feature matrix.
-
-        Args:
-
-        Returns:
-
-        """
-        new_latents = {
-            lbl: {k: np.zeros(hmat.shape) for k, hmat in hdict.items()}
-            for lbl, hdict in self.H_mats.items()
-            }
-
-        for lbl, var_mat in variable_mats.items():
             new_latents[lbl]['sigma'] = np.linalg.inv(
                 np.diag([self.sigma_h ** -1 for _ in range(self.R)])
-                + reduce(lambda x, y: x + y,
-                         [np.outer(self.weight_mat['mu'][1:, i],
-                                   self.weight_mat['mu'][1:, i])
-                          + self.weight_mat['sigma'][i][1:, 1:]
-                          for i in range(self.feat_count)])
+                + reduce(add, [np.outer(self.weight_mat['mu'][1:, i],
+                                        self.weight_mat['mu'][1:, i])
+                               + self.weight_mat['sigma'][i][1:, 1:]
+                               for i in range(self.pheno_count)])
                 )
 
             new_latents[lbl]['mu'] = np.dot(
                 new_latents[lbl]['sigma'],
-                np.dot(variable_mats[lbl]['mu'].transpose(),
+                np.dot(new_projections[lbl]['mu'].transpose(),
                        self.kernel_mats[lbl]) / self.sigma_h
-                + reduce(lambda x, y: x + y,
-                         [np.outer(self.weight_mat['mu'][1:, i],
-                                   self.output_mats[lbl]['mu'][:, i])
-                          - np.repeat(a=np.array([
-                              [x * self.weight_mat['mu'][0, i] + y
-                               for x, y in zip(
-                                   self.weight_mat['mu'][1:, i],
-                                   self.weight_mat['sigma'][i, 1:, 0])]
-                            ]), repeats=self.samp_counts[lbl], axis=0
-                          ).transpose()
-                          for i in range(self.feat_count)])
+                + reduce(add, [np.outer(self.weight_mat['mu'][1:, i],
+                                        self.output_mats[lbl]['mu'][:, i])
+                               - np.repeat(
+                                   a=np.array([[
+                                       x * self.weight_mat['mu'][0, i] + y
+                                       for x, y in zip(
+                                           self.weight_mat['mu'][1:, i],
+                                           self.weight_mat['sigma'][i, 1:, 0]
+                                        )]]),
+                                   repeats=self.samp_counts[lbl], axis=0
+                                ).transpose()
+                               for i in range(self.pheno_count)])
                 )
 
-        return new_latents
+        return new_projections, new_latents
 
-    def update_weights(self, weight_priors, latent_mats):
-        """Update the binary classification weights.
+    def update_weights(self, new_priors, new_latents):
+        """Updates posterior distributions of coupled classification weights.
 
         Args:
+            new_priors (dict): Precision prior posteriors for the weights.
+                These priors consist of paired gamma-distribution matrices of
+                shape (n_latents + 1 x n_phenos).
+
+            new_latents (dict): Latent representation posteriors.
+                These priors have an entry for each task, each of which
+                consists of paired normal-distribution matrices of shape
+                (n_latents x n_samples) for the means and (n_latents
+                x n_latents) for the variances.
 
         Returns:
+            new_weights (dict): Updated posteriors for the weights.
+                These priors consist of paired normal-distribution matrices of
+                shape (n_latents + 1 x n_phenos) for the means and (n_phenos
+                x n_latents + 1 x n_latents + 1) for the variances.
 
         """
-        new_weights = {'mu': np.zeros(weight_priors['alpha'].shape),
-                       'sigma': np.zeros((self.feat_count,
+        new_weights = {'mu': np.zeros(new_priors['alpha'].shape),
+                       'sigma': np.zeros((self.pheno_count,
                                           self.R + 1, self.R + 1))}
 
-        h_sum = reduce(add,
-                       [np.sum(latent_mat['mu'], axis=1)
-                        for latent_mat in latent_mats.values()])
+        h_sum = reduce(add, [np.sum(latent_mat['mu'], axis=1)
+                             for latent_mat in new_latents.values()])
 
-        hht_mat = reduce(add,
-                         [(latent_mat['mu'] @ latent_mat['mu'].transpose()
-                          + latent_mat['sigma'] * self.samp_counts[lbl])
-                          for lbl, latent_mat in latent_mats.items()])
+        hht_mat = reduce(add, [np.dot(latent_mat['mu'],
+                                      latent_mat['mu'].transpose())
+                               + latent_mat['sigma'] * self.samp_counts[lbl]
+                               for lbl, latent_mat in new_latents.items()])
 
-        for i in range(self.feat_count):
+        for i in range(self.pheno_count):
             new_weights['sigma'][i, 0, 0] = (
-                weight_priors['alpha'][0, i] / weight_priors['beta'][0, i]
+                new_priors['alpha'][0, i] / new_priors['beta'][0, i]
                 + sum(self.samp_counts.values())
                 )
 
@@ -363,8 +390,8 @@ class BaseMultiDomain(BaseBayesianTransfer):
             new_weights['sigma'][i, 0, 1:] = h_sum
 
             new_weights['sigma'][i, 1:, 1:] = (
-                hht_mat + np.diag(weight_priors['alpha'][1:, i]
-                                  / weight_priors['beta'][1:, i])
+                hht_mat + np.diag(new_priors['alpha'][1:, i]
+                                  / new_priors['beta'][1:, i])
                 )
             new_weights['sigma'][i, :, :] = np.linalg.inv(
                 new_weights['sigma'][i, :, :])
@@ -374,7 +401,7 @@ class BaseMultiDomain(BaseBayesianTransfer):
                 reduce(add, [np.dot(np.vstack([np.ones(self.samp_counts[lbl]),
                                                latent_mat['mu']]),
                                     self.output_mats[lbl]['mu'][:, i])
-                             for lbl, latent_mat in latent_mats.items()])
+                             for lbl, latent_mat in new_latents.items()])
                 )
 
         return new_weights
@@ -428,7 +455,7 @@ class BaseMultiDomain(BaseBayesianTransfer):
             np.sum(stats.norm(
                 loc=(self.A_mats[lbl]['mu'].transpose()
                      @ self.kernel_mats[lbl]),
-                scale=self.sigma_h
+                scale=self.sigma_h ** 0.5
                 ).logpdf(self.H_mats[lbl]['mu']))
             for lbl in y_dict
             )
@@ -518,7 +545,6 @@ class MultiDomain(BaseMultiDomain):
         return pred_p, pred_n
 
     def init_output_mat(self, y_dict):
-        """Initialize posterior distributions of the output predictions."""
         output_mats = {lbl: {'mu': abs(np.random.randn(*yvals.shape)),
                              'sigma': np.ones(yvals.shape)}
                        for lbl, yvals in y_dict.items()}
@@ -529,7 +555,7 @@ class MultiDomain(BaseMultiDomain):
 
         return output_mats
 
-    def update_output(self, latent_mats, weight_mat, y_dict):
+    def update_output(self, new_latents, weight_mat, y_dict):
         """Update the predicted output labels."""
         new_output = {
             lbl: {k: np.zeros(omat.shape) for k, omat in output_mat.items()}
@@ -545,8 +571,8 @@ class MultiDomain(BaseMultiDomain):
             } for lbl, yvals in y_dict.items()
             }
 
-        for lbl, latent_mat in latent_mats.items():
-            for i in range(self.feat_count):
+        for lbl, latent_mat in new_latents.items():
+            for i in range(self.pheno_count):
                 f_raw = np.dot(weight_mat['mu'][1:, i], latent_mat['mu'])
                 f_raw += weight_mat['mu'][0, i]
  

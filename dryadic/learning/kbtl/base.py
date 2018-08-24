@@ -51,7 +51,20 @@ class BaseBayesianTransfer(BaseEstimator, ClassifierMixin):
     def compute_kernels(self,
                         x_mat, y_mat=None, expr_genes=None, path_keys=None,
                         **kern_params):
-        """Gets the kernel matrices from a list of feature matrices."""
+        """Calculates the kernel between pairs of samples in two datasets.
+
+        Args:
+            x_mat (:obj:`np.array`, shape = [n_xsamps, n_features])
+            y_mat (:obj:`np.array`, optional, shape = [n_ysamps, n_features])
+                If only x_mat is given, y_mat defaults to x_mat, and the
+                kernel is calculated between pairs of samples in x_mat.
+
+        Returns:
+            kern_mat (:obj:`np.array`, shape = [n_xsamps, n_ysamps])
+                The type of kernel that is calculated is governed by the
+                `self.kernel` attribute of the classifier.
+
+        """
 
         if expr_genes is None:
             expr_genes = self.expr_genes
@@ -84,13 +97,22 @@ class BaseBayesianTransfer(BaseEstimator, ClassifierMixin):
         return kern_mat
 
     @abstractmethod
-    def init_output_mat(self, y_vec):
-        """Inititalizes the output label matrix."""
+    def init_output_mat(self, y_dict):
+        """Inititalizes the matrix of predicted output scores.
+
+        Args:
+            y_dict (:obj:`dict` of :obj:`np.array`,
+                    shape = [n_xsamps_i, n_phenos_i])
+                The training output labels, given as a dictionary with an
+                entry for each task consisting of an array with a row for each
+                training sample and a column for each phenotype to predict.
+
+        """
 
     def update_precision_priors(self,
                                 precision_mat, variable_mat,
                                 prec_alpha, prec_beta):
-        """Updates the posterior distributions of a set of precision priors.
+        """Updates posterior distributions of a matrix of precision priors.
 
         Performs an update step for the approximate posterior distributions
         of a matrix of gamma-distributed precision priors for a set of
@@ -104,37 +126,12 @@ class BaseBayesianTransfer(BaseEstimator, ClassifierMixin):
             new_priors (dict): Updated precision priors.
 
         """
-        new_priors = {'alpha': (np.zeros(precision_mat['alpha'].shape)
-                                + prec_alpha + 0.5),
+        new_priors = {'alpha': np.full(precision_mat['alpha'].shape,
+                                       prec_alpha + 0.5),
                       'beta': (prec_beta
                                + 0.5 * get_square_gauss(variable_mat))}
 
         return new_priors
-
-    def update_projection(self, prior_mat, variable_mat, feature_mat):
-        """Updates posterior distributions of projection matrices.
-
-        Args:
-
-        Returns:
-
-        """
-        new_variable = {'mu': np.zeros(variable_mat['mu'].shape),
-                        'sigma': np.zeros(variable_mat['sigma'].shape)}
-        prior_expect = (prior_mat['alpha'] / prior_mat['beta'])\
-            .transpose().tolist()
-
-        for i in range(self.R):
-            new_variable['sigma'][i, :, :] = np.linalg.inv(
-                np.diag(prior_expect[i])
-                + (self.kkt_mat / self.sigma_h))
-            new_variable['mu'][:, i] = np.dot(
-                new_variable['sigma'][i, :, :],
-                np.dot(self.kernel_mat,
-                       feature_mat['mu'][i, :].transpose())
-                / self.sigma_h)
-
-        return new_variable
 
     @abstractmethod
     def get_pred_class_probs(self, pred_mu, pred_sigma):
