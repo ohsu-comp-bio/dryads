@@ -16,6 +16,7 @@ from numbers import Number
 from functools import reduce
 from operator import mul
 from copy import copy
+from inspect import getargspec
 
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import cross_val_score
@@ -72,26 +73,10 @@ class OmicPipe(Pipeline):
     def fit(self, X, y=None, **fit_params):
         """Fits the steps of the pipeline in turn."""
 
-        Xt, final_params = self._fit(
-            X, y,
-            **{**fit_params, **{
-                'expr_genes': [
-                    xcol.split('__')[-1] if isinstance(xcol, str)
-                    else xcol[0].split('__')[-1] for xcol in X.columns
-                    ],
-                'expr_cols': X.columns
-                }}
-            )
+        self.expr_genes = [xcol.split('__')[-1] if isinstance(xcol, str)
+                           else xcol[0].split('__')[-1] for xcol in X.columns]
 
-        if 'feat' in self.named_steps:
-            self.genes = X.columns[
-                self.named_steps['feat']._get_support_mask()]
-
-        else:
-            self.genes = X.columns
-
-        if 'genes' in final_params:
-            final_params['genes'] = self.genes
+        Xt, final_params = self._fit(X, y, **fit_params)
         if self._final_estimator is not None:
             self._final_estimator.fit(Xt, y, **final_params)
 
@@ -101,6 +86,7 @@ class OmicPipe(Pipeline):
         self._validate_steps()
         step_names = [name for name, _ in self.steps]
 
+        use_genes = self.expr_genes
         fit_params_steps = {name: {} for name, step in self.steps
                             if step is not None}
 
@@ -114,31 +100,41 @@ class OmicPipe(Pipeline):
                 fit_params_steps[step][param] = pval
 
             else:
-                for step in fit_params_steps:
-                    step_indx = step_names.index(step)
-
-                    if (pname in self.steps[step_indx][1].fit
-                            .__code__.co_varnames):
+                for step, transform in self.steps:
+                    trans_args = getargspec(transform.fit)
+ 
+                    # only adds the fitting argument if the fit method of the
+                    # given step supports it
+                    if pname in trans_args.args or trans_args.keywords:
                         fit_params_steps[step][pname] = pval
 
         Xt = X
-
         for name, transform in self.steps[:-1]:
 
-            if transform is None:
-                pass
+            if transform:
+                if 'expr_genes' in getargspec(transform.fit).args:
+                    fit_params_steps[name]['expr_genes'] = use_genes
 
-            elif hasattr(transform, "fit_transform"):
-                Xt = transform.fit_transform(Xt, y, **fit_params_steps[name])
+                if hasattr(transform, "fit_transform"):
+                    Xt = transform.fit_transform(
+                        Xt, y, **fit_params_steps[name])
 
-            else:
-                Xt = transform.fit(Xt, y, **fit_params_steps[name]) \
-                    .transform(Xt)
+                else:
+                    Xt = transform.fit(
+                        Xt, y, **fit_params_steps[name]).transform(Xt)
+
+                if hasattr(transform, '_get_support_mask'):
+                    gene_arr = np.array(use_genes).reshape(1, -1)
+                    use_genes = transform.transform(
+                        gene_arr).flatten().tolist()
 
         if self._final_estimator is None:
             final_params = {}
         else:
             final_params = fit_params_steps[self.steps[-1][0]]
+
+            if 'expr_genes' in getargspec(self._final_estimator.fit).args:
+                final_params['expr_genes'] = use_genes
 
         return Xt, final_params
 
@@ -376,12 +372,21 @@ class PresencePipe(OmicPipe):
             elif len(true_indx) > 1:
                 raise PipelineError("Classifier has multiple <True> classes!")
 
-            parse_preds = np.array([scrs[true_indx[0]] for scrs in preds])
+        else:
+            true_indx = [-1]
+
+        if isinstance(preds, dict):
+            new_preds = {k: np.array([scrs[true_indx[0]]
+                                      for scrs in pred_list])
+                         for k, pred_list in preds.items()}
+
+        elif hasattr(preds[0], '__iter__'):
+            new_preds = np.array([scrs[true_indx[0]] for scrs in preds])
 
         else:
-            parse_preds = preds
+            new_preds = preds
 
-        return parse_preds
+        return new_preds
 
     def predict_omic(self, omic_data):
         return self.predict_proba(omic_data)

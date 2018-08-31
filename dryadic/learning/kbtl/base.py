@@ -3,8 +3,10 @@ from .utils import get_square_gauss
 from ..selection.pathway import PathwaySelect
 
 import numpy as np
+from scipy import stats
 from abc import abstractmethod
 import collections
+
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.metrics import pairwise
 
@@ -133,7 +135,9 @@ class BaseBayesianTransfer(BaseEstimator, ClassifierMixin):
 
         return new_priors
 
-    @abstractmethod
     def get_pred_class_probs(self, pred_mu, pred_sigma):
-        """Gets the predicted probability of falling into output classes."""
+        pred_p = 1 - stats.norm.cdf((self.margin - pred_mu) / pred_sigma)
+        pred_n = stats.norm.cdf((-self.margin - pred_mu) / pred_sigma)
+
+        return pred_p, pred_n
 

@@ -259,10 +259,6 @@ class BaseMultiDomain(BaseBayesianTransfer):
         return pred_dict
 
     @abstractmethod
-    def get_pred_class_probs(self, pred_mu, pred_sigma):
-        """Gets the predicted probability of falling into output classes."""
-
-    @abstractmethod
     def init_output_mat(self, y_dict):
         """Initialize posterior distributions of the output predictions."""
 
@@ -434,14 +430,14 @@ class BaseMultiDomain(BaseBayesianTransfer):
 
         # likelihood of projection matrix precision priors given
         # precision hyper-parameters
-        lambda_logl = sum(
+        lambda_logl = np.sum(
             np.sum(prec_distr.logpdf(lambda_mat['alpha']
                                      / lambda_mat['beta']))
             for lambda_mat in self.lambda_mats.values()
             )
 
         # likelihood of projection matrix values given their precision priors
-        a_logl = sum(
+        a_logl = np.sum(
             np.sum(stats.norm(
                 loc=0, scale=(self.lambda_mats[lbl]['beta']
                               / self.lambda_mats[lbl]['alpha'])
@@ -451,7 +447,7 @@ class BaseMultiDomain(BaseBayesianTransfer):
 
         # likelihood of latent feature matrix given kernel matrix,
         # projection matrix, and standard deviation hyper-parameter
-        h_logl = sum(
+        h_logl = np.sum(
             np.sum(stats.norm(
                 loc=(self.A_mats[lbl]['mu'].transpose()
                      @ self.kernel_mats[lbl]),
@@ -473,7 +469,7 @@ class BaseMultiDomain(BaseBayesianTransfer):
 
         # likelihood of predicted outputs given latent features, bias
         # parameters, and latent feature weight parameters
-        f_logl = sum(
+        f_logl = np.sum(
             np.sum(stats.norm(
                 loc=(self.weight_mat['mu'][1:, :].transpose()
                      @ self.H_mats[lbl]['mu']
@@ -538,12 +534,6 @@ class BaseMultiDomain(BaseBayesianTransfer):
 
 class MultiDomain(BaseMultiDomain):
 
-    def get_pred_class_probs(self, pred_mu, pred_sigma):
-        pred_p = 1 - stats.norm.cdf((self.margin - pred_mu) / pred_sigma)
-        pred_n = stats.norm.cdf((-self.margin - pred_mu) / pred_sigma)
-
-        return pred_p, pred_n
-
     def init_output_mat(self, y_dict):
         output_mats = {lbl: {'mu': abs(np.random.randn(*yvals.shape)),
                              'sigma': np.ones(yvals.shape)}
@@ -597,7 +587,7 @@ class MultiDomain(BaseMultiDomain):
         return new_output
 
     def get_y_logl(self, y_dict):
-        return sum(
+        return np.sum(
             np.sum(stats.norm(
                 loc=self.output_mats[lbl]['mu'] * np.vstack(y_dict[lbl]),
                 scale=self.output_mats[lbl]['sigma']

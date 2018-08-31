@@ -47,9 +47,7 @@ class TransferPipe(OmicPipe):
  
             for name, transform in self.steps[:-1]:
                 if transform:
-                    trans_args = getargspec(transform.fit)
-
-                    if 'expr_genes' in trans_args.args or trans_args.keywords:
+                    if 'expr_genes' in getargspec(transform.fit).args:
                         fit_params_steps[name]['expr_genes'] = use_genes[lbl]
  
                     if hasattr(transform, "fit_transform"):
@@ -75,7 +73,9 @@ class TransferPipe(OmicPipe):
             final_params = {}
         else:
             final_params = fit_params_steps[self.steps[-1][0]]
-            final_params['expr_genes'] = use_genes
+ 
+            if 'expr_genes' in getargspec(self._final_estimator.fit).args:
+                final_params['expr_genes'] = use_genes
 
         return Xt_dict, final_params
 
@@ -146,19 +146,15 @@ class MultiPipe(OmicPipe):
 
     """
 
-    @staticmethod
-    def parse_preds(preds):
-        return np.array(preds)
-
+    def parse_preds(self, preds):
+        return preds
+    """
     def score_omic(self, actual_omic, pred_omic):
-        """
-        Args:
-            actual_omic, pred_omic: np.array, shape: (n_samps, n_phenos)
-        """
         return np.min(self.score_each(actual_omic, pred_omic))
 
     def score_each(self, actual_omic, pred_omic):
         return [self.score_pheno(act_omic, p_omic)
                 for act_omic, p_omic in zip(actual_omic.transpose(),
                                             pred_omic.transpose())]
+    """
 
