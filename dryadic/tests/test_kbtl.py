@@ -5,10 +5,13 @@ base_dir = os.path.dirname(__file__)
 import sys
 sys.path.extend([os.path.join(base_dir, '../..')])
 
-from dryadic.features.cohorts import BaseTransferMutationCohort
+from dryadic.features.cohorts import *
 from dryadic.features.mutations import MuType
 from dryadic.learning.pipelines import PresencePipe, TransferPipe
+from dryadic.learning.pipelines.transfer import MultiPipe
 from dryadic.learning.selection import SelectMeanVar
+
+from dryadic.learning.kbtl.single_domain import SingleDomain
 from dryadic.learning.kbtl.multi_domain import MultiDomain
 
 import numpy as np
@@ -16,7 +19,23 @@ import pandas as pd
 from sklearn.preprocessing import StandardScaler
 
 
-class KBTL_test(TransferPipe, PresencePipe):
+class SingleTransfer(MultiPipe, PresencePipe):
+
+    tune_priors = (
+        ('fit__margin', (2./3, 24./23)),
+        ('fit__sigma_h', (1./11, 1./7)),
+        )
+
+    feat_inst = SelectMeanVar(mean_perc=80, var_perc=90)
+    norm_inst = StandardScaler()
+    fit_inst = SingleDomain(latent_features=3, max_iter=50)
+
+    def __init__(self):
+        super().__init__([('feat', self.feat_inst), ('norm', self.norm_inst),
+                          ('fit', self.fit_inst)])
+
+
+class MultiTransfer(TransferPipe, PresencePipe):
 
     tune_priors = (
         ('fit__margin', (2./3, 24./23)),
@@ -32,8 +51,11 @@ class KBTL_test(TransferPipe, PresencePipe):
                           ('fit', self.fit_inst)])
 
 
+class MultiMultiTransfer(MultiPipe, MultiTransfer):
+    pass
+
+
 def main():
-    clf = KBTL_test()
     data_dir = os.path.join(base_dir, "resources")
 
     expr_data = pd.read_csv(os.path.join(data_dir, "expr.txt.gz"),
@@ -45,47 +67,74 @@ def main():
     mut_dict = {coh: mut_data.loc[mut_data.Sample.isin(expr.index), :].copy()
                 for coh, expr in expr_dict.items()}
 
-    cdata = BaseTransferMutationCohort(
+    sing_clf = SingleTransfer()
+    mult_clf = MultiTransfer()
+    multmult_clf = MultiMultiTransfer()
+
+    sing_mtype = MuType({('Gene', 'TP53'): None})
+    mult_mtypes = [MuType({('Gene', 'TP53'): None}),
+                   MuType({('Gene', 'GATA3'): None})]
+
+    uni_cdata = BaseMutationCohort(expr_data, mut_data,
+                                   mut_genes=['TP53', 'GATA3'],
+                                   cv_prop=0.7, cv_seed=101)
+
+    sing_clf.tune_coh(uni_cdata, mult_mtypes,
+                      test_count=4, tune_splits=2, parallel_jobs=1)
+    print(sing_clf)
+    sing_clf.fit_coh(uni_cdata, mult_mtypes)
+
+    train_auc = sing_clf.eval_coh(uni_cdata, mult_mtypes, use_train=True)
+    print("Multi-pheno single-domain "
+          "KBTL model training AUC: {:.3f}".format(train_auc))
+    assert train_auc >= 0.6, (
+        "KBTL model did not obtain a training AUC of at least 0.6!"
+        )
+
+    test_auc = sing_clf.eval_coh(uni_cdata, mult_mtypes, use_train=False)
+    print("Multi-pheno single-domain "
+          "KBTL model testing AUC: {:.3f}".format(test_auc))
+    assert test_auc >= 0.6, (
+        "KBTL model did not obtain a testing AUC of at least 0.6!"
+        )
+
+    trs_cdata = BaseTransferMutationCohort(
         expr_dict=expr_dict, variant_dict=mut_dict,
         mut_genes=['TP53', 'GATA3'], cv_prop=0.7, cv_seed=101
         )
-    test_mtype = MuType({('Gene', 'TP53'): None})
 
-    clf.tune_coh(cdata, test_mtype,
-                 test_count=4, tune_splits=2, parallel_jobs=1)
-    print(clf)
-    clf.fit_coh(cdata, test_mtype)
+    mult_clf.tune_coh(trs_cdata, sing_mtype,
+                      test_count=4, tune_splits=2, parallel_jobs=1)
+    print(mult_clf)
+    mult_clf.fit_coh(trs_cdata, sing_mtype)
 
-    train_auc = clf.eval_coh(cdata, test_mtype, use_train=True)
+    train_auc = mult_clf.eval_coh(trs_cdata, sing_mtype, use_train=True)
     print("Single-pheno multi-domain "
           "KBTL model training AUC: {:.3f}".format(train_auc))
     assert train_auc >= 0.6, (
         "KBTL model did not obtain a training AUC of at least 0.6!"
         )
 
-    test_auc = clf.eval_coh(cdata, test_mtype, use_train=False)
+    test_auc = mult_clf.eval_coh(trs_cdata, sing_mtype, use_train=False)
     print("Single-pheno multi-domain "
           "KBTL model testing AUC: {:.3f}".format(test_auc))
     assert test_auc >= 0.6, (
         "KBTL model did not obtain a testing AUC of at least 0.6!"
         )
 
-    test_mtypes = [MuType({('Gene', 'TP53'): None}),
-                   MuType({('Gene', 'GATA3'): None})]
+    multmult_clf.tune_coh(trs_cdata, mult_mtypes,
+                          test_count=4, tune_splits=2, parallel_jobs=1)
+    print(multmult_clf)
+    multmult_clf.fit_coh(trs_cdata, mult_mtypes)
 
-    clf.tune_coh(cdata, test_mtypes,
-                 test_count=4, tune_splits=2, parallel_jobs=1)
-    print(clf)
-    clf.fit_coh(cdata, test_mtypes)
-
-    train_auc = clf.eval_coh(cdata, test_mtypes, use_train=True)
+    train_auc = multmult_clf.eval_coh(trs_cdata, mult_mtypes, use_train=True)
     print("Multi-pheno multi-domain "
           "KBTL model training AUC: {:.3f}".format(train_auc))
     assert train_auc >= 0.6, (
         "KBTL model did not obtain a training AUC of at least 0.6!"
         )
 
-    test_auc = clf.eval_coh(cdata, test_mtypes, use_train=False)
+    test_auc = multmult_clf.eval_coh(trs_cdata, mult_mtypes, use_train=False)
     print("Multi-pheno multi-domain "
           "KBTL model testing AUC: {:.3f}".format(test_auc))
     assert test_auc >= 0.6, (

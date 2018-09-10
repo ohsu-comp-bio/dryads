@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
+from sklearn.svm import SVC
 
 
 class Lasso_test(PresencePipe):
@@ -27,6 +28,21 @@ class Lasso_test(PresencePipe):
     norm_inst = StandardScaler()
     fit_inst = LogisticRegression(penalty='l1', max_iter=50,
                                   class_weight='balanced')
+
+    def __init__(self):
+        super().__init__([('feat', self.feat_inst), ('norm', self.norm_inst),
+                          ('fit', self.fit_inst)])
+
+
+class SVC_test(PresencePipe):
+
+    tune_priors = (
+        ('fit__C', (0.1, 0.5, 1., 2.)),
+        )
+
+    feat_inst = SelectMeanVar(mean_perc=70, var_perc=98)
+    norm_inst = StandardScaler()
+    fit_inst = SVC(kernel='rbf', probability=True)
 
     def __init__(self):
         super().__init__([('feat', self.feat_inst), ('norm', self.norm_inst),
@@ -68,6 +84,18 @@ def main():
     assert test_auc >= 0.6, (
         "Lasso model did not obtain a testing AUC of at least 0.6!"
         )
+
+    infer_mat = clf.infer_coh(cdata, test_mtype,
+                              infer_splits=8, infer_folds=4, parallel_jobs=1)
+
+    assert len(infer_mat) == 143, (
+        "Pipeline inference did not produce scores for each sample!"
+        )
+
+    clf = SVC_test()
+    clf.tune_coh(cdata, test_mtype,
+                 test_count=4, tune_splits=2, parallel_jobs=1)
+    clf.fit_coh(cdata, test_mtype)
 
     print("All pipeline tests passed successfully!")
 
