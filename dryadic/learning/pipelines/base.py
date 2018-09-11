@@ -73,9 +73,7 @@ class OmicPipe(Pipeline):
     def fit(self, X, y=None, **fit_params):
         """Fits the steps of the pipeline in turn."""
 
-        self.expr_genes = [xcol.split('__')[-1] if isinstance(xcol, str)
-                           else xcol[0].split('__')[-1] for xcol in X.columns]
-
+        self.expr_genes = X.columns.get_level_values(0).tolist()
         Xt, final_params = self._fit(X, y, **fit_params)
         if self._final_estimator is not None:
             self._final_estimator.fit(Xt, y, **final_params)

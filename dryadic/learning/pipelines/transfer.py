@@ -82,10 +82,8 @@ class TransferPipe(OmicPipe):
     def fit(self, X, y=None, **fit_params):
         """Fits the steps of the pipeline in turn."""
 
-        self.expr_genes = {
-            lbl: [xcol.split('__')[-1] for xcol in X_mat.columns]
-            for lbl, X_mat in X.items()
-            }
+        self.expr_genes = {lbl: X_mat.columns.get_level_values(0)
+                           for lbl, X_mat in X.items()}
 
         Xt_dict, final_params = self._fit(X, y, **fit_params)
         if self._final_estimator is not None:
