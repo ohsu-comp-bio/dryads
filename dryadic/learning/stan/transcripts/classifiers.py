@@ -16,8 +16,10 @@ class BaseTranscripts(StanClassifier):
 
     model_name = "BaseTranscriptClassifier"
 
-    def __init__(self, model_code, alpha=1e-4):
+    def __init__(self, model_code, alpha=1e-4, gamma=np.exp(1)):
         self.alpha = alpha
+        self.gamma = gamma
+
         super().__init__(model_code)
 
     def fit(self, X, y=None, expr_genes=None, **fit_params):
@@ -27,10 +29,10 @@ class BaseTranscripts(StanClassifier):
 
     def get_data_dict(self, omic, pheno, **fit_params):
         return {'expr': omic, 'mut': np.array(pheno, dtype=np.int),
-                'N': omic.shape[0], 'T': omic.shape[1],
-                'tx_indx': np.unique(
+                'N': omic.shape[0], 'T': omic.shape[1], 'tx_indx': np.unique(
                     self.genes, return_counts=True)[1].tolist(),
-                'G': len(set(self.genes)), 'alpha': self.alpha}
+                'G': len(set(self.genes)), 'alpha': self.alpha,
+                'gamma': self.gamma}
 
     def calc_pred_labels(self, omic):
         var_means = self.get_var_means()

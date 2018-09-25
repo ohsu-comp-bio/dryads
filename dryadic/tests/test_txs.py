@@ -18,13 +18,18 @@ from sklearn.preprocessing import StandardScaler
 class OptimTranscripts(BaseTranscripts, StanOptimizing):
  
     def run_model(self, **fit_params):
-        super().run_model(**{**fit_params, **{'iter': 1e4}})
+        super().run_model(**{**fit_params, **{'iter': 8e3}})
 
 
 class StanTranscripts(PresencePipe):
-    
+
+    tune_priors = (
+        ('fit__alpha', (1., 2.)),
+        ('fit__gamma', (3./7, 1., 37./13)),
+        )
+ 
     norm_inst = StandardScaler()
-    fit_inst = OptimTranscripts(alpha=1./13, model_code=base_model)
+    fit_inst = OptimTranscripts(model_code=base_model)
 
     def __init__(self):
         super().__init__([('norm', self.norm_inst), ('fit', self.fit_inst)])
@@ -43,6 +48,10 @@ def main():
     test_mtype = MuType({('Gene', 'TP53'): None})
 
     tx_clf = StanTranscripts()
+    tx_clf.tune_coh(cdata, test_mtype,
+                    test_count=6, tune_splits=1, parallel_jobs=1)
+
+    print(tx_clf)
     tx_clf.fit_coh(cdata, test_mtype)
 
     train_auc = tx_clf.eval_coh(cdata, test_mtype, use_train=True)
