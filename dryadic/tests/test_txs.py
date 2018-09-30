@@ -25,7 +25,7 @@ class StanTranscripts(PresencePipe):
 
     tune_priors = (
         ('fit__alpha', (1., 2.)),
-        ('fit__gamma', (3./7, 1., 37./13)),
+        ('fit__gamma', (3./7, 37./13)),
         )
  
     norm_inst = StandardScaler()
@@ -49,7 +49,7 @@ def main():
 
     tx_clf = StanTranscripts()
     tx_clf.tune_coh(cdata, test_mtype,
-                    test_count=6, tune_splits=1, parallel_jobs=1)
+                    test_count=4, tune_splits=1, parallel_jobs=1)
 
     print(tx_clf)
     tx_clf.fit_coh(cdata, test_mtype)

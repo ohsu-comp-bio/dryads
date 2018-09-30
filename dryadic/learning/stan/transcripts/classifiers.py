@@ -5,7 +5,7 @@ from scipy.stats import norm
 
 
 class BaseTranscripts(StanClassifier):
-    """Bayesian asymmetric overlap linear regression.
+    """Bayesian transcript feature multi-level Dirichlet linear regression.
 
     Parameters:
         alpha (float): Regularization parameter for feature coefficients.

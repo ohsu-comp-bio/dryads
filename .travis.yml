@@ -19,6 +19,7 @@ script:
         - python dryadic/tests/test_pipes.py
         - python dryadic/tests/test_kbtl.py
         - python dryadic/tests/test_stan.py
+        - python dryadic/tests/test_txs.py
 
 notifications:
         email:
