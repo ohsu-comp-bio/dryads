@@ -2,6 +2,7 @@
 from .branches import MuType
 import numpy as np
 import pandas as pd
+import os
 
 from functools import reduce
 from itertools import combinations as combn

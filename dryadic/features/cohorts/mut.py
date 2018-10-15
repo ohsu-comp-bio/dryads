@@ -8,8 +8,9 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
 
     def __init__(self,
                  expr, variants,
-                 mut_genes=None, mut_levels=('Gene', 'Form'), top_genes=100,
-                 samp_cutoff=None, cv_prop=2.0/3, cv_seed=None):
+                 mut_genes=None, mut_levels=('Gene', 'Form'), domain_dir=None,
+                 top_genes=100, samp_cutoff=None,
+                 cv_prop=2.0/3, cv_seed=None):
 
         if mut_genes is None:
             self.path = None
@@ -66,7 +67,7 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
         if test_samps:
             self.test_mut = MuTree(
                 muts=variants.loc[variants['Sample'].isin(test_samps), :],
-                levels=mut_levels
+                levels=mut_levels, domain_dir=domain_dir,
                 )
 
         else:
@@ -76,7 +77,7 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
         # training cohort samples
         self.train_mut = MuTree(
             muts=variants.loc[variants['Sample'].isin(train_samps), :],
-            levels=mut_levels
+            levels=mut_levels, domain_dir=domain_dir
             )
 
         self.mut_genes = mut_genes
