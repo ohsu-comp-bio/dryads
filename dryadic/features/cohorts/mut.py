@@ -5,6 +5,16 @@ import numpy as np
 
 
 class BaseMutationCohort(PresenceCohort, UniCohort):
+    """Base class for -omic datasets predicting binary genomic phenotypes.
+
+    Args:
+        expr (pandas.DataFrame, shape = [n_samps, n_features])
+
+    Attributes:
+        train_mut (dryadic.features.mutations.MuTree)
+        test_mut (MuTree, optional)
+
+    """
 
     def __init__(self,
                  expr, variants,

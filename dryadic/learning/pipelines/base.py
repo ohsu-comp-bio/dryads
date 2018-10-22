@@ -45,10 +45,11 @@ class OmicPipe(Pipeline):
 
     def __init__(self, steps, path_keys=None):
         super().__init__(steps)
-        self.genes = None
+        self.expr_genes = None
+        self.fit_genes = None
+
         self.cur_tuning = dict(self.tune_priors)
         self.path_keys = path_keys
-
         self.tune_params_add = None
         self.fit_params_add = None
 
@@ -128,8 +129,10 @@ class OmicPipe(Pipeline):
 
         if self._final_estimator is None:
             final_params = {}
+
         else:
             final_params = fit_params_steps[self.steps[-1][0]]
+            self.fit_genes = use_genes
 
             if 'expr_genes' in getargspec(self._final_estimator.fit).args:
                 final_params['expr_genes'] = use_genes
@@ -451,13 +454,16 @@ class LinearPipe(OmicPipe):
 
     """
 
+    def calc_pred_labels(self, X):
+        return self.decision_function(X).reshape(-1)
+
     def get_coef(self):
-        if self.genes is None:
+        if self.fit_genes is None:
             raise PipelineError("Gene coefficients only available once "
                                 "the pipeline has been fit!")
 
         return {gene: coef for gene, coef in
-                zip(self.genes, self.named_steps['fit'].coef_.flatten())}
+                zip(self.fit_genes, self.named_steps['fit'].coef_.flatten())}
 
 
 class EnsemblePipe(OmicPipe):

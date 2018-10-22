@@ -7,7 +7,7 @@ sys.path.extend([os.path.join(base_dir, '../..')])
 
 from dryadic.features.cohorts import BaseMutationCohort
 from dryadic.features.mutations import MuType
-from dryadic.learning.pipelines import PresencePipe
+from dryadic.learning.pipelines import PresencePipe, LinearPipe
 from dryadic.learning.selection import SelectMeanVar
 
 import numpy as np
@@ -17,7 +17,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
 
 
-class Lasso_test(PresencePipe):
+class Lasso_test(PresencePipe, LinearPipe):
 
     tune_priors = (
         ('feat__mean_perc', (93, 87, 61, 49)),
@@ -69,8 +69,13 @@ def main():
     tuned_coefs = np.floor(expr_data.shape[1]
                            * (clf.named_steps['feat'].mean_perc / 100))
     assert tuned_coefs == len(clf.named_steps['fit'].coef_[0]), (
-        "Tuned feature selection step does not match number of features that"
+        "Tuned feature selection step does not match number of features that "
         "were fit over!"
+        )
+
+    assert len(clf.get_coef()) <= len(clf.expr_genes), (
+        "Pipeline produced more gene coefficients than genes "
+        "it was originally given!"
         )
 
     train_auc = clf.eval_coh(cdata, test_mtype, use_train=True)

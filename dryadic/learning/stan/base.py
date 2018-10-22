@@ -5,9 +5,10 @@ import pystan
 
 
 class BaseStan(BaseEstimator):
-    """Abstract class for implementing Stan models for -omic prediction.
+    """Abstract class for Stan models used to predict phenotypic features.
 
-    Parameters:
+    Attributes:
+        model_name (str): A label used to identify the model.
         model_code (str): A Bayesian model represented in the Stan language.
 
     """
@@ -48,6 +49,7 @@ class BaseStan(BaseEstimator):
 
 
 class StanClassifier(BaseStan, ClassifierMixin):
+    """Abstract class for Stan models used to predict discrete phenotypes."""
 
     def calc_pred_labels(self, omic):
         raise NotImplementedError("Stan predictors must implement their "

@@ -12,16 +12,16 @@ class CohortError(Exception):
 
 
 class Cohort(object):
-    """Base abstract class for -omic datasets used in machine learning.
+    """Abstract class for -omic datasets used in machine learning.
 
     This class consists of a dataset of -omic measurements collected for a
     collection of samples over a set of genetic features. The samples are
     divided into training and testing sub-cohorts for use in the evaluation of
-    machine learning models. The nature of these -omic measurements and the
-    phenotypes the models will be used to predict are defined by
+    machine learning models. The specific nature of these -omic measurements
+    and the phenotypes the models will be used to predict are defined by
     children classes.
 
-    Args:
+    Args / Attributes:
         omic_data : An -omic dataset or collection thereof.
         train_samps, test_samps : Subsets of samples in each -omic dataset.
         genes : The genetic features included in each -omic dataset.
@@ -173,7 +173,7 @@ class Cohort(object):
 
 
 class UniCohort(Cohort):
-    """An -omic dataset from one source for use in predicting phenotypes.
+    """Abstract class for predicting phenotypes using a single dataset.
 
     This class consists of a dataset of -omic measurements collected for a
     collection of samples coming from a single context, such as TCGA-BRCA
@@ -185,6 +185,9 @@ class UniCohort(Cohort):
             Subsets of samples in the index of the -omic data frame.
         cv_seed (int, optional)
             A random seed used for sampling from the dataset.
+
+    Attributes:
+        samples (frozenset): The samples present in the dataset.
 
     """
 
@@ -234,8 +237,8 @@ class UniCohort(Cohort):
 
         # remove duplicate features from the dataset as well as samples
         # not listed in either the training or testing sub-cohorts
-        omic_mat = omic_mat.loc[self.samples, ~omic_mat.columns.duplicated()]
-        super().__init__(omic_mat, train_samps, test_samps, genes, cv_seed)
+        use_mat = omic_mat.loc[self.samples, ~omic_mat.columns.duplicated()]
+        super().__init__(use_mat, train_samps, test_samps, genes, cv_seed)
 
     def subset_samps(self,
                      include_samps=None, exclude_samps=None, use_test=False):
@@ -339,11 +342,12 @@ class UniCohort(Cohort):
 
 
 class PresenceCohort(Cohort):
-    """An -omic dataset used to predict the presence of binary phenotypes.
+    """Abstract class for -omic datasets predicting binary phenotypes.
     
     This class is used to predict features such as the presence of a
     particular type of variant or copy number alteration, the presence of a
     binarized drug response, etc.
+
     """
 
     @abstractmethod
@@ -375,7 +379,7 @@ class PresenceCohort(Cohort):
                           on the pair of phenotypes in the training cohort.
 
         Examples:
-            >>> from HetMan.features.mutations.branches import MuType
+            >>> from dryadic.features.mutations.branches import MuType
             >>>
             >>> self.mutex_test(MuType({('Gene', 'TP53'): None}),
             >>>                 MuType({('Gene', 'CDH1'): None}))
