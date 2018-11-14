@@ -53,6 +53,7 @@ class Cohort(object):
                                   use_test=False)
         genes = self.subset_genes(include_genes, exclude_genes)
 
+        # only get training phenotypic data if phenotype is specified
         if pheno is not None:
             pheno, samps = self.parse_pheno(
                 self.train_pheno(pheno, samps), samps)
@@ -69,6 +70,7 @@ class Cohort(object):
                                   use_test=True)
         genes = self.subset_genes(include_genes, exclude_genes)
 
+        # only get testing phenotypic data if phenotype is specified
         if pheno is not None:
             pheno, samps = self.parse_pheno(
                 self.test_pheno(pheno, samps), samps)
@@ -255,7 +257,7 @@ class UniCohort(Cohort):
         Returned samples are sorted to ensure that subsetted datasets with the
         same samples will be identical.
 
-        Arguments:
+        Args:
             include_samps (:obj:`iterable` of :obj: `str`, optional)
             exclude_samps (:obj:`iterable` of :obj: `str`, optional)
             use_test (bool, optional): Whether to use the testing cohort.
@@ -295,7 +297,7 @@ class UniCohort(Cohort):
         Returned genes are sorted to ensure that subsetted datasets with the
         same genes will be identical.
 
-        Arguments:
+        Args:
             include_genes (:obj:`iterable` of :obj: `str`, optional)
             exclude_genes (:obj:`iterable` of :obj: `str`, optional)
 
@@ -567,7 +569,7 @@ class TransferCohort(Cohort):
         lists specific to each -omic dataset in the cohort, are a single list
         to be used to subset all the -omic datasets.
 
-        Arguments:
+        Args:
             include_genes (:obj:`list` or :obj:`iterable` of :obj: `str`,
                            optional)
             exclude_genes (:obj:`list` or :obj:`iterable` of :obj: `str`,

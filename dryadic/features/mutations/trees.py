@@ -47,20 +47,20 @@ class MuTree(object):
     keys of the MuTree.mut_fields object, in which case they will be defined
     by the corresponding MuType.muts_<level> method.
 
-    Attributes:
-        depth (int): How many mutation levels are above the tree
-                     in the hierarchy.
-        mut_level (str): The mutation annotation level described by the top
-                         level of the tree.
-
     Args:
-        muts (pandas DataFrame), shape = [n_muts, n_annot_fields]
+        muts (:obj:`pd.DataFrame`, shape = [n_muts, n_annot_fields]
             Input mutation data, each record is a mutation occurring in
             a sample to be included in the tree.
             Must contain a 'Sample' column.
 
         levels (:obj:`tuple` of :obj:`str`)
             A list of mutation annotation levels to be included in the tree.
+
+    Attributes:
+        depth (int): How many mutation levels are above the tree
+                     in the hierarchy.
+        mut_level (str): The mutation annotation level described by the top
+                         level of the tree.
 
     Examples:
         >>> mut_data = pd.DataFrame(
@@ -95,7 +95,7 @@ class MuTree(object):
         """Splits mutations into tree branches for a given level.
 
         Args:
-            muts (pandas DataFrame), shape = [n_muts, n_annot_fields]
+            muts (pd.DataFrame), shape = [n_muts, n_annot_fields]
                 A list of mutations to be split according to the given
                 annotation level, where each row corresponds to a mutation
                 in a particular sample. Must contain the annotation fields
@@ -181,7 +181,7 @@ class MuTree(object):
     """Functions for defining custom mutation levels.
 
     Args:
-        muts (pandas DataFrame), shape = [n_muts, n_annot_fields]
+        muts (pd.DataFrame), shape = [n_muts, n_annot_fields]
             Mutations to be split according to the given level.
             Must contain a 'Sample' field as well as the fields defined in
             MuTree.mut_fields for each custom level.
@@ -275,11 +275,11 @@ class MuTree(object):
     """Functions for custom parsing of mutation levels.
 
     Args:
-        muts (pandas DataFrame), shape = [n_muts, n_annot_fields]
+        muts (pd.DataFrame), shape = [n_muts, n_annot_fields]
             Mutations whose properties are to be parsed.
 
     Returns:
-        new_muts (pandas DataFrame), shape = [n_muts, n_annot_fields]
+        new_muts (pd.DataFrame), shape = [n_muts, n_annot_fields]
             The given list of mutations with the given mutation levels
             altered according to the corresponding parsing rule.
     """
