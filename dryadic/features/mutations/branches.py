@@ -1,9 +1,8 @@
 
 from functools import reduce
-from operator import and_
 from itertools import product
 from itertools import permutations as perm
-from re import sub as gsub
+import re
 
 
 class MuType(object):
@@ -333,7 +332,7 @@ class MuType(object):
 
             new_str += ' OR '
 
-        return gsub(' OR $', '', new_str)
+        return re.sub(' OR $', '', new_str)
 
     def __str__(self):
         """Gets a condensed label for the MuType."""
@@ -381,10 +380,10 @@ class MuType(object):
                            self.get_levels() - {self.cur_level})
                     )
 
-        return gsub('\\|+$', '', new_str)
+        return re.sub('\\|+$', '', new_str)
 
-    def get_label(self):
-        return gsub('/|\.|:', '_', str(self))
+    def get_filelabel(self):
+        return "".join([c if re.match(r'\w', c) else '-' for c in str(self)])
 
     def __or__(self, other):
         """Returns the union of two MuTypes."""
@@ -633,23 +632,35 @@ class MutComb(object):
         mtypes = list(mtypes)
         obj = super().__new__(cls)
 
-        # removes overlap between the given mutations
-        for i, j in perm(range(len(mtypes)), r=2):
-            if not (mtypes[i] & mtypes[j]).is_empty():
-                mtypes[j] -= mtypes[i]
+        if len(mtypes) == 1:
+            obj.mtypes = frozenset(mtypes)
+            return obj
 
-        # removes mutations that are covered by other given mutations
-        mtypes = [mtype for mtype in mtypes if mtype and not mtype.is_empty()]
+        else:
+            # removes overlap between the given mutations
+            for i, j in perm(range(len(mtypes)), r=2):
+                if not (mtypes[i] & mtypes[j]).is_empty():
+                    mtypes[j] -= mtypes[i]
 
-        # if only one unique mutation was given, return that mutation...
-        if mtypes:
-            if len(mtypes) == 1:
-                return mtypes[0]
+            # removes mutations that are covered by other given mutations
+            mtypes = [mtype for mtype in mtypes
+                      if mtype and not mtype.is_empty()]
 
-            # ...otherwise, return the combination of the given mutations
+            # if only one unique mutation was given, return that mutation...
+            if mtypes:
+                if len(mtypes) == 1:
+                    return mtypes[0]
+
+                # ...otherwise, return the combination of the given mutations
+                else:
+                    obj.mtypes = frozenset(mtypes)
+                    return obj
+
             else:
-                obj.mtypes = frozenset(mtypes)
-                return obj
+                return MuType({})
+
+    def is_empty(self):
+        return False
 
     def mtype_apply(self, each_fx, comb_fx):
         each_list = [each_fx(mtype) for mtype in self.mtypes]
@@ -669,6 +680,45 @@ class MutComb(object):
             lambda x, y: (x ^ y + eval(hex((int(value) * 1003)
                                            & 0xFFFFFFFF)[:-1]))
             )
+
+    def __and__(self, other):
+        ovlp_mcomb = MuType({})
+
+        if len(self.mtypes) == len(other.mtypes):
+            ovlp_mat = [[not (mtype & other_mtype).is_empty()
+                         for other_mtype in other.mtypes]
+                        for mtype in self.mtypes]
+
+            if all(any(ovlp) for ovlp in ovlp_mat):
+                ovlp_mtypes = []
+                sort_ovlp = sorted(zip(self.mtypes, ovlp_mat),
+                                   key=lambda x: sum(x[1]))
+
+                while sort_ovlp:
+                    ovlp_mtypes += [[]]
+                    cur_mtype, cur_ovlp = sort_ovlp.pop(0)
+
+                    for i, (other_mtype, ovlp_stat) in enumerate(
+                            zip(other.mtypes, cur_ovlp)):
+                        if ovlp_stat:
+                            ovlp_mtypes[-1] += [cur_mtype & other_mtype]
+
+                            for j in range(len(sort_ovlp)):
+                                sort_ovlp[j][1][i] = False
+
+                comb_prod = tuple(product(*ovlp_mtypes))
+                if len(comb_prod) == 1:
+                    ovlp_mcomb = MutComb(*comb_prod[0])
+                elif len(comb_prod) > 1:
+                    ovlp_mcomb = tuple(MutComb(*prod) for prod in comb_prod)
+
+        return ovlp_mcomb
+
+    def __sub__(self, other):
+        if isinstance(other, MuType):
+            return MutComb([mtype - other for mtype in self.mtypes])
+        else:
+            return self
 
     def get_samples(self, mtree):
         return self.mtype_apply(lambda mtype: mtype.get_samples(mtree), and_)
