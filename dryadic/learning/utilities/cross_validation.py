@@ -14,6 +14,7 @@ from collections import Sized, defaultdict
 from functools import partial, reduce
 from operator import or_
 from itertools import product
+from copy import deepcopy
 
 import scipy.sparse as sp
 from scipy.stats import rankdata
@@ -404,13 +405,15 @@ class OmicRandomizedCV(RandomizedSearchCV):
         # cohorts will be used, and which parameter values will be tested on
         # each split
         n_splits = cv.get_n_splits(X, y, groups)
-        candidate_params = list(self._get_param_iterator())
-        n_candidates = len(candidate_params)
+
+        self.candidate_params = list(self._get_param_iterator())
+        candidate_params = deepcopy(self.candidate_params)
+        n_candidates = len(self.candidate_params)
 
         # updates the parameter values to be tested with parameter values
         # specific to testing
-        for i in range(len(candidate_params)):
-            candidate_params[i].update(tune_params)
+        for i in range(len(self.candidate_params)):
+            self.candidate_params[i].update(tune_params)
 
         if self.verbose > 0 and isinstance(tune_params, Sized):
             n_candidates = len(tune_params)
@@ -482,7 +485,7 @@ class OmicRandomizedCV(RandomizedSearchCV):
                                             np.empty(n_candidates,),
                                             mask=True,
                                             dtype=object))
-        for cand_i, params in enumerate(candidate_params):
+        for cand_i, params in enumerate(self._get_param_iterator()):
             for name, value in params.items():
                 # An all masked empty array gets created for the key
                 # `"param_%s" % name` at the first occurence of `name`.
@@ -492,7 +495,7 @@ class OmicRandomizedCV(RandomizedSearchCV):
         results.update(param_results)
 
         # saves the results of tuning the estimator as attributes
-        results['params'] = candidate_params
+        results['params'] = self.candidate_params
         self.cv_results_ = results
         self.n_splits_ = n_splits
 

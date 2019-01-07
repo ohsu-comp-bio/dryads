@@ -62,10 +62,14 @@ def main():
     test_mtype = MuType({('Gene', 'GATA3'): None})
 
     clf = Lasso_test()
-    clf.tune_coh(cdata, test_mtype,
-                 test_count=16, tune_splits=4, parallel_jobs=1)
-    clf.fit_coh(cdata, test_mtype)
+    clf, cvs = clf.tune_coh(cdata, test_mtype,
+                            test_count=16, tune_splits=4, parallel_jobs=1)
 
+    best_indx = np.argmax(cvs['mean_test_score'] - cvs['std_test_score'])
+    for param, _ in clf.tune_priors:
+        assert clf.get_params()[param] == cvs['params'][best_indx][param]
+
+    clf.fit_coh(cdata, test_mtype)
     tuned_coefs = np.floor(expr_data.shape[1]
                            * (clf.named_steps['feat'].mean_perc / 100))
     assert tuned_coefs == len(clf.named_steps['fit'].coef_[0]), (

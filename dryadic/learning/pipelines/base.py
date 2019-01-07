@@ -71,23 +71,15 @@ class OmicPipe(Pipeline):
 
         return param_str
 
-    def fit(self, X, y=None, **fit_params):
-        """Fits the steps of the pipeline in turn."""
-
-        self.expr_genes = X.columns.get_level_values(0).tolist()
-        Xt, final_params = self._fit(X, y, **fit_params)
-        if self._final_estimator is not None:
-            self._final_estimator.fit(Xt, y, **final_params)
-
-        return self
-
     def _fit(self, X, y=None, **fit_params):
         self._validate_steps()
-        step_names = [name for name, _ in self.steps]
 
-        use_genes = self.expr_genes
+        step_names = [name for name, _ in self.steps]
         fit_params_steps = {name: {} for name, step in self.steps
                             if step is not None}
+
+        self.expr_genes = X.columns.get_level_values(0).tolist()
+        use_genes = X.columns.get_level_values(0).tolist()
 
         if 'fit' in fit_params_steps and self.fit_params_add:
             for pname, pval in self.fit_params_add.items():
@@ -267,7 +259,7 @@ class OmicPipe(Pipeline):
             if verbose:
                 print(self)
 
-        return self
+        return self, grid_test.cv_results_
 
     def fit_coh(self,
                 cohort, pheno,

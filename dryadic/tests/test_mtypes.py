@@ -59,21 +59,23 @@ def pytest_generate_tests(metafunc):
 class TestCaseInit(object):
     """Tests for proper instatiation of MuTypes from type dictionaries."""
 
-    params = {'test_child': 'basic',
-              'test_levels': 'basic',
-              'test_len': 'basic'}
+    params = {'test_child': 'basic', 'test_levels': 'basic',
+              'test_synonyms': 'synonyms'}
 
     def test_child(self, mtypes):
         """Is the child attribute of a MuType properly created?"""
 
         assert mtypes[0]._child == {frozenset(['TP53']): None}
-        assert mtypes[1]._child == {
-            frozenset(['TP53']): MuType({('Form', 'Frame_Shift'): None})}
+        assert mtypes[1]._child == {frozenset(['TP53', 'KRAS']): None}
+        assert mtypes[2]._child == {
+            frozenset(['TP53']): MuType({('Form', 'Frame'): None})}
 
-        assert mtypes[2]._child == {frozenset(['TP53', 'TTN']): None}
-        assert mtypes[3]._child == mtypes[2]._child
-        assert mtypes[4]._child == mtypes[2]._child
-        assert mtypes[5]._child == mtypes[2]._child
+        assert mtypes[3]._child == {
+            frozenset(['TP53']): MuType({('Form', 'Point'): None}),
+            frozenset(['KRAS']): MuType({('Form', 'Frame'): None})
+            }
+        assert mtypes[4]._child == {
+            frozenset(['TP53', 'KRAS']): MuType({('Form', 'InDel'): None})}
 
     def test_empty(self):
         """Can we correctly instantiate an empty MuType?"""
@@ -86,18 +88,17 @@ class TestCaseInit(object):
     def test_levels(self, mtypes):
         """Do mutations store mutation annotation levels correctly?"""
 
-        assert all(mtype.cur_level == 'Gene'
-                   for mtype in mtypes)
-
+        assert all(mtype.cur_level == 'Gene' for mtype in mtypes)
         assert mtypes[0].get_levels() == {'Gene'}
-        assert mtypes[1].get_levels() == {'Gene', 'Form'}
-        assert mtypes[2].get_levels() == {'Gene'}
-        assert mtypes[3].get_levels() == {'Gene'}
-        assert mtypes[4].get_levels() == {'Gene'}
-        assert mtypes[5].get_levels() == {'Gene'}
+        assert mtypes[1].get_levels() == {'Gene'}
 
-    def test_len(self, mtypes):
-        assert [len(mtype) for mtype in mtypes].__eq__([1, 1, 2, 2, 2, 2])
+        assert mtypes[2].get_levels() == {'Gene', 'Form'}
+        assert mtypes[3].get_levels() == {'Gene', 'Form'}
+        assert mtypes[4].get_levels() == {'Gene', 'Form'}
+
+    def test_synonyms(self, mtypes):
+        for mtype1, mtype2 in zip(mtypes[0::2], mtypes[1::2]):
+            assert mtype1._child == mtype2._child
 
 
 class TestCaseBasic:
@@ -105,10 +106,15 @@ class TestCaseBasic:
 
     params = 'ALL'
 
-    def test_iter(self, mtypes):
-        """Can we iterate over the sub-types in a MuType?"""
-        for mtype in mtypes:
-            assert len(mtype.subtype_list()) >= len(list(mtype.child_iter()))
+    def test_hash(self, mtypes):
+        """Can we get proper hash values of MuTypes?"""
+        for mtype1, mtype2 in product(mtypes, repeat=2):
+            assert (mtype1 == mtype2) == (hash(mtype1) == hash(mtype2))
+
+    def test_equality(self, mtypes):
+        for mtype1, mtype2 in product(mtypes, repeat=2):
+            if mtype1._child == mtype2._child:
+                assert mtype1 == mtype2
 
     def test_print(self, mtypes):
         """Can we print MuTypes?"""
@@ -123,11 +129,6 @@ class TestCaseBasic:
             else:
                 assert repr(mtype1) != repr(mtype2)
                 assert str(mtype1) != str(mtype2)
-
-    def test_hash(self, mtypes):
-        """Can we get proper hash values of MuTypes?"""
-        for mtype1, mtype2 in product(mtypes, repeat=2):
-            assert (mtype1 == mtype2) == (hash(mtype1) == hash(mtype2))
 
     def test_subkeys(self, mtypes):
         """Can we get the leaf types stored in a MuType?"""
@@ -148,6 +149,20 @@ class TestCaseBasic:
                 assert len(keys1) == len(keys2)
                 assert (sorted(MuType(k) for k in keys1)
                         == sorted(MuType(k) for k in keys2))
+
+
+class TestCaseIter:
+    """Tests for iterating over the elements of MuTypes."""
+
+    params = 'basic'
+
+    def test_iter(self, mtypes):
+        """Can we iterate over the sub-types in a MuType?"""
+        for mtype in mtypes:
+            assert len(mtype.subtype_list()) >= len(list(mtype.child_iter()))
+
+    def test_len(self, mtypes):
+        assert [len(mtype) for mtype in mtypes].__eq__([1, 2, 1, 2, 2])
 
 
 class TestCaseSorting:

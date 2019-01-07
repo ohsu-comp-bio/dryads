@@ -9,12 +9,25 @@ from ...features.mutations import MuType
 # .. basic subtypes
 basic = (
     MuType({('Gene', 'TP53'): None}),
-    MuType({('Gene', 'TP53'): {('Form', 'Frame_Shift'): None}}),
-    MuType({('Gene', ('TP53', 'TTN')): None}),
-    MuType({('Gene', 'TP53'): None, ('Gene', 'TTN'): None}),
-    MuType({('Gene', 'TP53'): None, ('Gene', ('TP53', 'TTN')): None}),
-    MuType({('Gene', 'TP53'): {('Form', 'Frame_Shift'): None},
-            ('Gene', ('TP53', 'TTN')): None}),
+    MuType({('Gene', ('TP53', 'KRAS')): None}),
+    MuType({('Gene', 'TP53'): {('Form', 'Frame'): None}}),
+    MuType({('Gene', 'TP53'): {('Form', 'Point'): None},
+            ('Gene', 'KRAS'): {('Form', 'Frame'): None}}),
+    MuType({('Gene', 'TP53'): {('Form', 'InDel'): None},
+            ('Gene', 'KRAS'): {('Form', 'InDel'): None}}),
+    )
+
+synonyms = (
+    MuType({('Gene', ('TP53', 'KRAS')): None}),
+    MuType({('Gene', 'TP53'): None, ('Gene', 'KRAS'): None}),
+    MuType({('Gene', 'TP53'): {('Form', 'Frame'): None},
+            ('Gene', 'KRAS'): {('Form', 'Frame'): None}}),
+    MuType({('Gene', ('TP53', 'KRAS')): {('Form', 'Frame'): None}}),
+    MuType({('Gene', 'TP53'): {('Form', ('Point', 'Frame')): None},
+            ('Gene', 'KRAS'): {('Form', ('Frame', 'Point')): None}}),
+    MuType({('Gene', 'TP53'): {('Form', 'Frame'): None},
+            ('Gene', 'KRAS'): {('Form', 'Frame'): None},
+            ('Gene', ('TP53', 'KRAS')): {('Form', 'Point'): None}}),
     )
 
 # .. subtypes present in the ./mut_objs/muts_small.p set
