@@ -2,58 +2,20 @@
 """Unit tests for abstract representations of mutation sub-types.
 
 See Also:
-    :class:`..features.mutations.MuType`: Contains the class tested herein.
+    :class:`..features.mutations.MuType`: The class tested herein.
 
 Author: Michal Grzadkowski <grzadkow@ohsu.edu>
 
 """
 
 from ..features.mutations import MuType
-from .resources import *
+from .utilities import pytest_generate_tests
 import pytest
 
 from functools import reduce
-from operator import add, or_, and_
-
+from operator import or_, and_
 from itertools import combinations as combn
 from itertools import product
-
-
-def mtype_tester(mtypes_param):
-    type_lbls = mtypes_param.split('_')
-
-    if "ALL" in type_lbls:
-        mtypes = reduce(
-            add,
-            [tps for _, tps in vars(test_mtypes).items()
-             if isinstance(tps, tuple) and isinstance(tps[0], MuType)]
-            )
-
-    else:
-        mtypes = reduce(add, [eval('test_mtypes.{}'.format(lbl))
-                              for lbl in type_lbls])
-
-    return mtypes
-
-
-def pytest_generate_tests(metafunc):
-
-    if metafunc.function.__code__.co_argcount > 1:
-        if hasattr(metafunc.cls, 'params'):
-            if isinstance(metafunc.cls.params, dict):
-                funcarglist = metafunc.cls.params[metafunc.function.__name__]
-
-            else:
-                funcarglist = metafunc.cls.params
-
-        else:
-            funcarglist = 'ALL'
-
-        if isinstance(funcarglist, str):
-            funcarglist = [funcarglist]
-
-        metafunc.parametrize('mtypes', [mtype_tester(funcarg)
-                                        for funcarg in funcarglist])
 
 
 class TestCaseInit(object):
@@ -137,32 +99,32 @@ class TestCaseBasic:
 
             assert len(set(key_mtypes)) == len(key_mtypes)
             assert reduce(or_, key_mtypes) == mtype
+            assert (sum(len(key_mtype.subkeys()) for key_mtype in key_mtypes)
+                    == len(mtype.subkeys()))
 
             if len(key_mtypes) > 1:
                 assert reduce(and_, key_mtypes).is_empty()
 
-        for mtype1, mtype2 in combn(mtypes, 2):
-            if mtype1 == mtype2:
-                keys1 = mtype1.subkeys()
-                keys2 = mtype2.subkeys()
-
-                assert len(keys1) == len(keys2)
-                assert (sorted(MuType(k) for k in keys1)
-                        == sorted(MuType(k) for k in keys2))
+        for mtype1, mtype2 in product(mtypes, repeat=2):
+            assert ((sorted(MuType(k) for k in mtype1.subkeys())
+                     == sorted(MuType(k) for k in mtype2.subkeys()))
+                    == (mtype1 == mtype2))
 
 
 class TestCaseIter:
     """Tests for iterating over the elements of MuTypes."""
 
-    params = 'basic'
+    params = {'test_iter': 'ALL', 'test_len': ['basic_synonyms']}
 
     def test_iter(self, mtypes):
         """Can we iterate over the sub-types in a MuType?"""
         for mtype in mtypes:
-            assert len(mtype.subtype_list()) >= len(list(mtype.child_iter()))
+            assert (len(mtype.subkeys()) >= len(mtype.subtype_list())
+                    >= len(list(mtype.child_iter())))
 
     def test_len(self, mtypes):
-        assert [len(mtype) for mtype in mtypes].__eq__([1, 2, 1, 2, 2])
+        assert ([len(mtype) for mtype in mtypes]
+                == [1, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2])
 
 
 class TestCaseSorting:
@@ -289,3 +251,4 @@ class TestCaseBinary:
         sub_mtype = MuType({
             ('Gene', 'TP53'): {('Form', 'Missense_Mutation'): None}})
         assert (mtypes[2] - mtypes[0]) == sub_mtype
+
