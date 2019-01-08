@@ -87,10 +87,10 @@ class TestCaseBasic:
         for mtype1, mtype2 in combn(mtypes, 2):
             if mtype1 == mtype2:
                 assert str(mtype1) == str(mtype2)
+                assert repr(mtype1) == repr(mtype2)
 
             else:
                 assert repr(mtype1) != repr(mtype2)
-                assert str(mtype1) != str(mtype2)
 
     def test_subkeys(self, mtypes):
         """Can we get the leaf types stored in a MuType?"""

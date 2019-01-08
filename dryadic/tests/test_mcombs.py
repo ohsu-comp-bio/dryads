@@ -19,6 +19,8 @@ from itertools import product
 class TestCaseInit(object):
     """Tests for proper instatiation of MutCombs from lists of MuTypes."""
 
+    params = ['basic_synonyms_binary']
+
     def test_attr(self, mtypes):
         for mtype1, mtype2 in product(mtypes, repeat=2):
             if (mtype1 & mtype2).is_empty():
@@ -47,4 +49,26 @@ class TestCaseInit(object):
         for mtype1, mtype2 in product(set(mtypes) | {MuType({})}, repeat=2):
             if mtype1.is_supertype(mtype2):
                 assert MutComb(mtype1, mtype2) == mtype2
+
+                if mtype1.get_levels() == mtype2.get_levels():
+                    assert (MutComb(mtype1, not_mtype=mtype2)
+                            == mtype1 - mtype2)
+
+
+class TestCaseBasic(object):
+
+    params = 'basic'
+
+    def test_hash(self, mcombs):
+        for mcomb1, mcomb2 in product(mcombs, repeat=2):
+            assert (mcomb1 == mcomb2) == (hash(mcomb1) == hash(mcomb2))
+
+    def test_print(self, mcombs):
+        for mcomb1, mcomb2 in combn(mcombs, 2):
+            if mcomb1 == mcomb2:
+                assert repr(mcomb1) == repr(mcomb2)
+                assert str(mcomb1) == str(mcomb2)
+
+            else:
+                assert repr(mcomb1) != repr(mcomb2)
 

@@ -1,7 +1,8 @@
 
 from functools import reduce
 from itertools import product
-from itertools import permutations as perm
+from itertools import combinations as combn
+from operator import and_
 import re
 
 
@@ -234,7 +235,7 @@ class MuType(object):
         # MuTypes with the same mutation levels are equal if and only if
         # they have the same subtypes for the same level category labels
         else:
-            eq = self.child_iter() == other.child_iter()
+            eq = self._child == other._child
 
         return eq
 
@@ -624,7 +625,7 @@ class MutComb(object):
 
     """
 
-    def __new__(cls, *mtypes):
+    def __new__(cls, *mtypes, not_mtype=None):
         if not all(isinstance(mtype, MuType) for mtype in mtypes):
             raise TypeError(
                 "A MutComb object must be a combination of MuTypes!")
@@ -632,45 +633,76 @@ class MutComb(object):
         mtypes = list(mtypes)
         obj = super().__new__(cls)
 
-        if len(mtypes) == 1:
-            obj.mtypes = frozenset(mtypes)
-            return obj
+        # removes overlap between the given mutations
+        for i, j in combn(range(len(mtypes)), r=2):
+            if mtypes[i] is not None and mtypes[j] is not None:
+                if mtypes[i].is_supertype(mtypes[j]):
+                    mtypes[i] = None
+                elif mtypes[j].is_supertype(mtypes[i]):
+                    mtypes[j] = None
+
+        # removes mutations that are covered by other given mutations
+        mtypes = [mtype for mtype in mtypes if mtype is not None]
+        all_mtype = reduce(and_, mtypes)
+
+        if not_mtype is not None:
+            mtypes = [mtype - not_mtype
+                      if mtype.get_levels() == not_mtype.get_levels()
+                      else mtype for mtype in mtypes]
+
+            if not_mtype.get_levels() == all_mtype.get_levels():
+                not_mtype -= all_mtype
+
+        # removes mutations that are covered by other given mutations
+        mtypes = [mtype for mtype in mtypes if not mtype.is_empty()]
+
+        # if only one unique mutation was given, return that mutation...
+        if mtypes:
+            if len(mtypes) == 1 and (not_mtype is None or not_mtype.is_empty()):
+                return mtypes[0]
+
+            # ...otherwise, return the combination of the given mutations
+            else:
+                obj.mtypes = frozenset(mtypes)
+                obj.not_mtype = not_mtype
+                return obj
 
         else:
-            # removes overlap between the given mutations
-            for i, j in perm(range(len(mtypes)), r=2):
-                if not (mtypes[i] & mtypes[j]).is_empty():
-                    mtypes[j] -= mtypes[i]
-
-            # removes mutations that are covered by other given mutations
-            mtypes = [mtype for mtype in mtypes
-                      if mtype and not mtype.is_empty()]
-
-            # if only one unique mutation was given, return that mutation...
-            if mtypes:
-                if len(mtypes) == 1:
-                    return mtypes[0]
-
-                # ...otherwise, return the combination of the given mutations
-                else:
-                    obj.mtypes = frozenset(mtypes)
-                    return obj
-
-            else:
-                return MuType({})
+            return MuType({})
 
     def is_empty(self):
         return False
+
+    def __eq__(self, other):
+        """Checks if one MutComb is equal to another."""
+
+        if not isinstance(other, MutComb):
+            eq = False
+
+        else:
+            eq = self.mtypes == other.mtypes
+            eq &= self.not_mtype == other.not_mtype
+
+        return eq
+
 
     def mtype_apply(self, each_fx, comb_fx):
         each_list = [each_fx(mtype) for mtype in self.mtypes]
         return reduce(comb_fx, each_list)
 
     def __repr__(self):
-        return self.mtype_apply(repr, lambda x, y: x + ' AND ' + y)
+        out_str = self.mtype_apply(repr, lambda x, y: x + ' AND ' + y)
+        if self.not_mtype is not None:
+            out_str += ' WITHOUT ' + repr(self.not_mtype)
+
+        return out_str
 
     def __str__(self):
-        return self.mtype_apply(str, lambda x, y: x + ' & ' + y)
+        out_str = self.mtype_apply(str, lambda x, y: x + ' & ' + y)
+        if self.not_mtype is not None:
+            out_str += ' ~ ' + str(self.not_mtype)
+
+        return out_str
 
     def __hash__(self):
         value = 0x213129
@@ -721,5 +753,10 @@ class MutComb(object):
             return self
 
     def get_samples(self, mtree):
-        return self.mtype_apply(lambda mtype: mtype.get_samples(mtree), and_)
+        samps = self.mtype_apply(lambda mtype: mtype.get_samples(mtree), and_)
+
+        if self.not_mtype is not None:
+            samps -= self.not_mtype.get_samples(mtree)
+
+        return samps
 
