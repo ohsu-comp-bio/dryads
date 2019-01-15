@@ -89,30 +89,84 @@ def get_gencode(annot_file):
                          annotation fields.
 
     """
-    annot = pd.read_csv(annot_file, usecols=[0, 2, 3, 4, 8],
-                        names=['Chr', 'Type', 'Start', 'End', 'Info'],
+    annot = pd.read_csv(annot_file, usecols=[0, 2, 3, 4, 6, 8],
+                        names=['Chr', 'Type', 'Start', 'End',
+                               'Strand', 'Info'],
                         sep='\t', header=None, comment='#')
 
-    # filter out annotation records that aren't
-    # protein-coding genes on non-sex chromosomes
+    # remove annotation records that are non-relevant or on sex chromosomes
     chroms_use = ['chr' + str(i+1) for i in range(22)]
-    annot = annot.loc[annot['Type'] == 'gene', ]
-    chr_indx = np.array([chrom in chroms_use for chrom in annot['Chr']])
-    annot = annot.loc[chr_indx, ]
+    annot = annot.loc[annot['Type'].isin(['gene', 'transcript',
+                                          'exon', 'UTR'])
+                      & annot['Chr'].isin(chroms_use), :]
 
-    # parse the info field to get each gene's annotation data
-    gn_annot = {gsub('\.[0-9]+', '', z['gene_id']).replace('"', ''): z
-                for z in [dict([['chr', an[0]]]
-                               + [['Start', an[2]]] + [['End', an[3]]] +
-                               [y for y in [x.split(' ')
-                                            for x in an[4].split('; ')]
-                                if len(y) == 2])
-                          for an in annot.values]
-                if z['gene_type'] == '"protein_coding"'}
+    # parse the annotation field of each record into a table of fields
+    info_flds = pd.DataFrame.from_records(
+        annot['Info'].str.split('; ').apply(
+            lambda flds: dict(fld.split(' ') for fld in flds))
+        ).applymap(lambda x: x.replace('"', '') if isinstance(x, str) else x)
 
-    gn_annot = {g: {k: v.replace('"', '') if isinstance(v, str) else v
-                    for k, v in annt.items()}
-                for g, annt in gn_annot.items()}
+    # remove version numbers from Ensembl IDs of genes and transcripts
+    info_flds['gene_id'] = info_flds.gene_id.str.replace('\.[0-9]+', '')
+    info_flds['transcript_id'] = info_flds.transcript_id.str.replace(
+        '\.[0-9]+', '')
+    info_flds['exon_number'] = pd.to_numeric(info_flds['exon_number'],
+                                             downcast='integer')
+
+    # merge record annotations, remove non-protein-coding genes and
+    # transcripts, create table containing just the unique gene records
+    info_df = pd.concat([annot.iloc[:, :5].reset_index(drop=True),
+                         info_flds.reset_index(drop=True)],
+                        axis=1)
+    info_df = info_df[info_df.transcript_type == 'protein_coding']
+    gene_df = info_df[info_df.Type == 'gene'].set_index('gene_id')
+
+    # group transcript records according to parent gene, transform gene
+    # records into a dictionary
+    tx_groups = info_df[(info_df.Type == 'transcript')
+                        & info_df.gene_id.isin(gene_df.index)].groupby(
+                            ['gene_id'])
+    gn_annot = {gn: dict(recs[['Chr', 'Start', 'End', 'Strand', 'gene_name']])
+                for gn, recs in gene_df.iterrows()}
+
+    # insert the transcripts for each gene into the gene record dictionary
+    for gn, tx_df in tx_groups:
+        gn_annot[gn]['Transcripts'] = {
+            tx: dict(recs[['Start', 'End', 'transcript_name']])
+            for tx, recs in tx_df.set_index('transcript_id').iterrows()
+            }
+
+    # likewise, group exon records according to parent gene
+    exn_groups = info_df[info_df.Type.isin(['exon', 'UTR'])
+                         & info_df.gene_id.isin(gene_df.index)].groupby(
+                             ['gene_id'])
+
+    # insert the exons for each gene into the gene dictionary, using the first
+    # transcript of each gene as the genomic reference
+    for gn, exn_df in exn_groups:
+        use_tx = '{}-001'.format(gn_annot[gn]['gene_name'])
+        use_exns = exn_df[exn_df.transcript_name == use_tx].sort_values(
+            by=['Start', 'Type'], ascending=[True, False])
+
+        use_exns = use_exns.reset_index(drop=True)
+        gn_annot[gn]['Exons'] = use_exns[
+            use_exns.Type == 'exon'].sort_values(by='exon_number')[
+                ['Start', 'End', 'exon_id']].apply(dict, axis=1).tolist()
+
+        for i in range(use_exns.shape[0]):
+            if use_exns['Type'][i] == 'UTR':
+                utr_exn = int(use_exns['exon_number'][cur_exon]) - 1
+
+                if 'UTR' in gn_annot[gn]['Exons'][utr_exn]:
+                    gn_annot[gn]['Exons'][utr_exn]['UTR'] += [use_exns[
+                        ['Start', 'End']].iloc[i].to_dict()]
+
+                else:
+                    gn_annot[gn]['Exons'][utr_exn]['UTR'] = [use_exns[
+                        ['Start', 'End']].iloc[i].to_dict()]
+
+            else:
+                cur_exon = i
 
     return gn_annot
 
