@@ -241,6 +241,9 @@ class MuType(object):
 
     def __lt__(self, other):
         """Defines a sort order for MuTypes."""
+        if isinstance(other, MutComb):
+            return True
+
         if not isinstance(other, MuType):
             return NotImplemented
 

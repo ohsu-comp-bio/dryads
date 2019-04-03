@@ -1,5 +1,7 @@
 
 from .branches import MuType
+from ..data import get_protein_domains
+
 import numpy as np
 import pandas as pd
 import os
@@ -238,7 +240,7 @@ class MuTree(object):
 
         # for each mutation, get the location of the protein it affects
         loc_tbl = pd.to_numeric(
-            muts['Protein'].str.extract('(^p\\.[A-Z])([0-9]+)',
+            muts['Protein'].str.extract('(^p\\.[A-Z|*])([0-9]+)',
                                         expand=False).iloc[:, 1]
             )
 
@@ -262,7 +264,7 @@ class MuTree(object):
         """Parses mutation according to protein location."""
         new_muts = {}
 
-        loc_tbl = muts['Protein'].str.extract('(^p\\.[A-Z])([0-9]+)',
+        loc_tbl = muts['Protein'].str.extract('(^p\\.[A-Z|*])([0-9]+)',
                                               expand=False)
         none_indx = pd.isnull(loc_tbl.iloc[:, 1])
         loc_tbl.loc[none_indx, 1] = muts['Protein'][none_indx]
@@ -425,15 +427,11 @@ class MuTree(object):
                 if 'Domain_' in level:
                     domain_lbl = level.split('Domain_')[1]
 
-                    domain_data = pd.read_csv(
-                        os.path.join(kwargs['domain_dir'],
-                                     "{}_to_gene.txt.gz".format(domain_lbl)),
-                        sep='\t'
-                        )
-                    
-                    domain_data.columns = ["Gene", "Transcript", "DomainID",
-                                           "DomainStart", "DomainEnd"]
-                    kwargs.update({domain_lbl: domain_data})
+                    if domain_lbl not in kwargs:
+                        kwargs.update({
+                            domain_lbl: get_protein_domains(
+                                kwargs['domain_dir'], domain_lbl)
+                            })
 
         # intializes mutation hierarchy construction variables
         lvls_left = list(levels)

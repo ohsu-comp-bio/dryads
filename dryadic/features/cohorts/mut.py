@@ -28,7 +28,7 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
             var_df = variants.loc[
                 (variants['Scale'] == 'Point')
                 | ((variants['Scale'] == 'Copy')
-                   & variants['Copy'].isin(['HomDel', 'HomGain'])),
+                   & variants['Copy'].isin(['DeepDel', 'DeepGain'])),
                 :]
 
             # find how many unique samples each gene is mutated in, filter for

@@ -1,7 +1,7 @@
 import setuptools
 
 setuptools.setup(name='dryad',
-      version='0.3.2b0',
+      version='0.3.2',
       description='Prediction of Cancer Phenotypes Using Mutation Trees',
       author='Michal Radoslaw Grzadkowski',
       author_email='grzadkow@ohsu.edu',
@@ -9,7 +9,7 @@ setuptools.setup(name='dryad',
           exclude=["dryadic.tests.*", "dryadic.tests"]),
       url = 'https://github.com/ohsu-comp-bio/dryad',
       download_url = ('https://github.com/ohsu-comp-bio/'
-                      'dryad/archive/v0.3.1.tar.gz'),
+                      'dryad/archive/v0.3.2.tar.gz'),
       install_requires=[
           'numpy>=1.14.3',
           'pandas>=0.23.3',
