@@ -21,12 +21,10 @@ class Cohort(object):
     and the phenotypes the models will be used to predict are defined by
     children classes.
 
-    Args / Attributes:
+    Args:
         omic_data : An -omic dataset or collection thereof.
-        train_samps, test_samps : Subsets of samples in each -omic dataset.
-        feats : The genetic features included in each -omic dataset.
-        cv_seed (int, optional)
-            A random seed used for sampling from the datasets.
+        cv_seed (int): A seed used for random sampling from the datasets.
+        test_prop: The proportion of samples in each dataset used for testing.
 
     """
 
@@ -153,13 +151,9 @@ class UniCohort(Cohort):
 
     Args:
         omic_mat (:obj:`pd.DataFrame`, shape = [n_samps, n_feats])
-        train_samps, test_samps
-            Subsets of samples in the index of the -omic data frame.
-        cv_seed (int, optional)
-            A random seed used for sampling from the dataset.
-
-    Attributes:
-        samples (frozenset): The samples present in the dataset.
+        cv_seed (int): A seed used for random sampling from the datasets.
+        test_prop (float): The proportion of samples in the dataset
+                           used for testing.
 
     """
 
@@ -171,10 +165,10 @@ class UniCohort(Cohort):
         super().__init__(omic_mat, cv_seed, test_prop)
 
     def get_samples(self):
+        """Retrieve all samples for which -omic measurements are available."""
         return self._omic_data.index.tolist()
 
     def _split_samples(self, test_prop):
-        pass
         """Splits a list of samples into training and testing sub-cohorts.
 
         Args:
@@ -213,7 +207,7 @@ class UniCohort(Cohort):
         return train_samps, test_samps
 
     def get_train_samples(self, include_samps=None, exclude_samps=None):
-        """Gets a subset of the samples in the cohort's -omic dataset.
+        """Getting a subset of the samples in the cohort used for training.
 
         This is a utility function whereby a list of samples to be included
         and/or excluded in a given analysis can be specified. This list is
@@ -249,7 +243,7 @@ class UniCohort(Cohort):
         return sorted(train_samps)
 
     def get_test_samples(self, include_samps=None, exclude_samps=None):
-        """Gets a subset of the samples in the cohort's -omic dataset.
+        """Getting a subset of the samples in the cohort used for testing.
 
         This is a utility function whereby a list of samples to be included
         and/or excluded in a given analysis can be specified. This list is
@@ -286,7 +280,7 @@ class UniCohort(Cohort):
         return sorted(test_samps)
 
     def get_features(self, include_feats=None, exclude_feats=None):
-        """Gets a subset of the genes in the cohort's -omic dataset.
+        """Getting a subset of the features over which -omics were measured.
 
         This is a utility function whereby a list of genes to be included
         and/or excluded in a given analysis can be specified. This list is
@@ -345,6 +339,9 @@ class UniCohort(Cohort):
     @abstractmethod
     def test_pheno(self, pheno, samps=None):
         """Returns the values for a phenotype in the testing sub-cohort."""
+
+    def data_hash(self):
+        return tuple(dict(self._omic_data.sum().round(5)).items())
 
 
 class PresenceCohort(Cohort):
