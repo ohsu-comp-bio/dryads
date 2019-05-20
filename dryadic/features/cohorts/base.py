@@ -162,7 +162,7 @@ class UniCohort(Cohort):
 
     Args:
         omic_mat (:obj:`pd.DataFrame`, shape = [n_samps, n_feats])
-        cv_seed (int): A seed used for random sampling from the datasets.
+        cv_seed (int): A seed used for random sampling from the dataset.
         test_prop (float): The proportion of samples in the dataset
                            used for testing.
 
@@ -415,229 +415,188 @@ class TransferCohort(Cohort):
 
     Args:
         omic_mats (:obj:`dict` of :obj:`pd.DataFrame`)
-        train_samps, test_samps (dict)
-            Subsets of samples in the index of each -omic data frame.
-        cv_seed (int, optional)
-            A random seed used for sampling from the dataset.
+        cv_seed (int): A random seed used for sampling from the datasets.
+        test_prop (float or :obj:`dict` of :obj:`float`)
+            The proportion of samples in each dataset used for testing.
 
     """
  
-    def __init__(self, omic_mats, train_samps, test_samps, cv_seed=None):
-
+    def __init__(self, omic_mats, cv_seed, test_prop):
         if not isinstance(omic_mats, dict):
             raise TypeError("`omic_mats` must be a dictionary, found {} "
                             "instead!".format(type(omic_mats)))
 
-        omic_dict = dict()
-        feats = dict()
-        self.samples = dict()
-
         for coh, omic_mat in omic_mats.items():
             if not isinstance(omic_mat, pd.DataFrame):
-                raise TypeError(
-                    "`omic_mats` must have pandas DataFrames as values, "
-                    "found {} instead for cohort {}!".format(
-                        type(omic_mat), coh)
+                raise TypeError("`omic_mats` must have pandas DataFrames as "
+                                "values, found {} instead for "
+                                "cohort {}!".format(type(omic_mat), coh))
+
+        super().__init__(omic_mats, cv_seed, test_prop)
+
+    def get_samples(self):
+        """Retrieves all samples from each -omic dataset.
+
+        Returns:
+            samps (:obj:`dict` of :obj:`list`)
+
+        """
+        return {coh: omic_mat.index.tolist()
+                for coh, omic_mat in self._omic_data.items()}
+
+    def _split_samples(self, test_prop):
+        """Splits each dataset's samples into training and testing subsets.
+
+        Args:
+            test_prop (float or :obj:`dict` of :obj:`float`)
+                The proportion of samples in each dataset which will be used
+                for the testing subset. Must be non-negative and strictly
+                less than one.
+
+        Returns:
+            train_samps, test_samps (:obj:`dict` of :obj:`set`)
+
+        """
+        samp_dict = self.get_samples()
+        train_samps = {coh: set() for coh in samp_dict}
+        test_samps = {coh: set() for coh in samp_dict}
+
+        if not isinstance(test_prop, dict):
+            test_prop = {coh: test_prop for coh in samp_dict}
+        if self._cv_seed is not None:
+            random.seed(a=self._cv_seed)
+
+        for coh, samps in samp_dict.items():
+            if test_prop[coh] < 0 or test_prop[coh] >= 1:
+                raise ValueError("Improper testing sample ratio for cohort "
+                                 "{} that is not at least zero and less than "
+                                 "one!".format(coh))
+
+            if test_prop[coh] > 0:
+                train_samps[coh] = set(
+                    random.sample(population=sorted(tuple(samps)),
+                                  k=int(round(len(samps)
+                                              * (1 - test_prop[coh]))))
                     )
+                test_samps[coh] = set(samps) - train_samps[coh]
 
-            coh_feats = tuple(omic_mat.columns)
-            if isinstance(coh_feats[0], str):
-                feats[coh] = frozenset(coh_feats)
-
-            elif isinstance(coh_feats[0], tuple):
-                feats[coh] = frozenset(x[0] for x in coh_feats)
-
-            # check that the samples listed in the training and testing
-            # sub-cohorts are valid relative to the -omic datasets
-            if not (set(train_samps[coh]) & set(omic_mat.index)):
-                raise CohortError(
-                    "At least one training sample must be in the -omic "
-                    "dataset for cohort {}!".format(coh)
-                    )
-
-            if (test_samps[coh] is not None
-                    and not set(test_samps[coh]) & set(omic_mat.index)):
-                raise CohortError(
-                    "At least one testing sample must be in the -omic "
-                    "dataset for cohort {}!".format(coh)
-                    )
-
-            # check that the samples listed in the training and testing
-            # sub-cohorts are valid relative to each other
-            if not train_samps[coh]:
-                raise CohortError("There must be at least one training "
-                                  "sample in cohort {}!".format(coh))
-
-            if (test_samps[coh] is not None
-                    and set(train_samps[coh]) & set(test_samps[coh])):
-                raise CohortError(
-                    "Training sample set and testing sample set must be "
-                    "disjoint for cohort {}!".format(coh)
-                    )
-
-            # when we don't have a testing cohort, use entire the entire
-            # dataset as the training cohort
-            train_samps[coh] = frozenset(train_samps[coh])
-            if test_samps[coh] is None:
-                self.samples[coh] = train_samps[coh].copy()
-
-            # when we have a training cohort and a testing cohort
             else:
-                self.samples[coh] = (frozenset(train_samps[coh])
-                                     | frozenset(test_samps[coh]))
-                test_samps[coh] = frozenset(test_samps[coh])
+                train_samps[coh] = set(samps)
 
-            omic_dict[coh] = omic_mats[coh].loc[
-                self.samples[coh], ~omic_mats[coh].columns.duplicated()]
+        return train_samps, test_samps
 
-        super().__init__(omic_dict, train_samps, test_samps, feats, cv_seed)
-
-    @classmethod
-    def combine_cohorts(cls, *cohorts, **named_cohorts):
-
-        cohort_dict = dict()
-        omic_mats = dict()
-        train_samps = dict()
-        test_samps = dict()
-        cv_seed = None
-
-        for cohort in cohorts:
-            if not hasattr(cohort, 'cohort'):
-                raise TypeError(
-                    "Unnamed cohorts must have a `cohort` attribute so "
-                    "that they can be automatically labelled!"
-                    )
-
-            if cohort.cohort in cohort_dict:
-                raise CohortError(
-                    "Cannot pass two cohorts with the same `cohort` label, "
-                    "pass these as unique keyword arguments instead!"
-                    )
-
-            cohort_dict[cohort.cohort] = cohort
-
-        for lbl, cohort in named_cohorts.items():
-            if lbl in cohort_dict:
-                raise CohortError(
-                    "Cannot use custom cohort label <{}>, which the label of "
-                    "another cohort already used!".format(lbl)
-                    )
-
-            cohort_dict[lbl] = cohort
-
-        for lbl, cohort in cohort_dict.items():
-            omic_mats[lbl] = cohort.omic_data
-            train_samps[lbl] = cohort.train_samps
-            test_samps[lbl] = cohort.test_samps
-
-            if cohort.cv_seed is not None:
-                if cv_seed is None or cv_seed > cohort.cv_seed:
-                    cv_seed = cohort.cv_seed
-
-        return cls(omic_mats, train_samps, test_samps, cv_seed)
-
-    def subset_samps(self,
-                     include_samps=None, exclude_samps=None, use_test=False):
-
-        if use_test:
-            coh_samps = self.test_samps.copy()
-        else:
-            coh_samps = self.train_samps.copy()
+    def get_train_samples(self, include_samps=None, exclude_samps=None):
+        train_samps = self._train_samps.copy()
 
         # decide what samples to use based on exclusion and inclusion criteria
         if include_samps is not None:
-            coh_samps = {coh: samps & set(include_samps[coh])
-                         for coh, samps in coh_samps.items()}
+            train_samps = {coh: samps & set(include_samps[coh])
+                           for coh, samps in train_samps.items()}
 
         if exclude_samps is not None:
-            coh_samps = {coh: samps - set(exclude_samps[coh])
-                         for coh, samps in coh_samps.items()}
+            train_samps = {coh: samps - set(exclude_samps[coh])
+                           for coh, samps in train_samps.items()}
 
-        return {coh: sorted(samps) for coh, samps in coh_samps.items()}
+        return {coh: sorted(samps) for coh, samps in train_samps.items()}
 
-    def subset_feats(self, include_feats=None, exclude_feats=None):
-        """Gets a subset of the genes in the cohort's -omic datasets.
+    def get_test_samples(self, include_samps=None, exclude_samps=None):
+        test_samps = self._test_samps.copy()
 
-        This is a utility function whereby a list of genes to be included
-        and/or excluded in a given analysis can be specified. This list is
-        checked against the genes actually available in the datasets, and the
-        genes that are both available and match the inclusion/exclusion
-        criteria are returned.
+        # decide what samples to use based on exclusion and inclusion criteria
+        if include_samps is not None:
+            test_samps = {coh: samps & set(include_samps[coh])
+                          for coh, samps in test_samps.items()}
+
+        if exclude_samps is not None:
+            test_samps = {coh: samps - set(exclude_samps[coh])
+                          for coh, samps in test_samps.items()}
+
+        return {coh: sorted(samps) for coh, samps in test_samps.items()}
+
+    def get_features(self, include_feats=None, exclude_feats=None):
+        """Gets a subset of the -omic features from each of the datasets.
+
+        This is a utility function whereby a list of genetic features to be
+        included and/or excluded in a given analysis can be specified. This
+        list is checked against the features actually measured in each of the
+        datasets, and the features that are both available and match the
+        inclusion/exclusion criteria are returned.
 
         Note that exclusion takes precedence over inclusion, that is, if a
-        gene is asked to be both included and excluded it will be excluded.
-        Returned genes are sorted to ensure that lists of subsetted datasets
-        with the same genes will be identical.
+        feature is asked to be both included and excluded it will be excluded.
+        Returned features are sorted to ensure that lists of subsetted
+        datasets with the same features will be identical.
 
-        Also note that the genes to be included and excluded can be given as
-        lists specific to each -omic dataset in the cohort, are a single list
-        to be used to subset all the -omic datasets.
+        Also note that the features to be included and excluded can be given
+        as lists specific to each dataset in the cohort, or as a single list
+        used to subset all the -omic datasets.
 
         Args:
-            include_genes (:obj:`list` or :obj:`iterable` of :obj: `str`,
+            include_feats (:obj:`list` or :obj:`iterable` of :obj: `str`,
                            optional)
-            exclude_genes (:obj:`list` or :obj:`iterable` of :obj: `str`,
+            exclude_feats (:obj:`list` or :obj:`iterable` of :obj: `str`,
                            optional)
 
         Returns:
-            genes (:obj:`list` of :obj:`str`)
+            feat_dict (:obj:`list` of :obj:`str`)
 
         See Also:
-            `subset_samps`: similar function but for genetic features
-                            of the dataset
+            :method:`get_train_samples`, :method:`get_test_samples`
+                Similar functions but for the samples in each dataset.
 
         """
-        feats = self.feats.copy()
+        feats = dict()
 
-        # adds genes to the list of genes to retrieve
+        for coh, omic_mat in self._omic_data.items():
+            coh_feats = omic_mat.columns.tolist()
+
+            if isinstance(coh_feats[0], str):
+                feats[coh] = frozenset(coh_feats)
+            elif isinstance(coh_feats[0], tuple):
+                feats[coh] = frozenset(coh_feat[0] for coh_feat in coh_feats)
+
+        # adds features to the list of features to retrieve
         if include_feats is not None:
             if isinstance(list(include_feats)[0], str):
-                feats = {lbl: gns & set(include_feats)
-                         for lbl, gns in self.feats.items()}
-            else:
-                feats = {lbl: gns & set(in_gns) for (lbl, gns), in_gns in
-                         zip(self.feats.items(), include_feats)}
+                feats = {coh: fts & set(include_feats)
+                         for coh, fts in feats.items()}
 
-        # removes feats from the list of feats to retrieve
+            else:
+                feats = {coh: fts & set(in_fts)
+                         for (coh, fts), in_fts in zip(feats.items(),
+                                                       include_feats)}
+
+        # removes features from the list of features to retrieve
         if exclude_feats is not None:
             if isinstance(list(exclude_feats)[0], str):
-                feats = {lbl: gns - set(exclude_feats)
-                         for lbl, gns in self.feats.items()}
-            else:
-                feats = {lbl: gns - set(ex_gns) for (lbl, gns), ex_gns in
-                         zip(self.feats.items(), exclude_feats)}
+                feats = {coh: fts - set(exclude_feats)
+                         for coh, fts in feats.items()}
 
-        return {lbl: sorted(gns) for lbl, gns in feats.items()}
+            else:
+                feats = {coh: fts - set(ex_fts)
+                         for (coh, fts), ex_fts in zip(feats.items(),
+                                                       exclude_feats)}
+
+        return {coh: sorted(fts) for coh, fts in feats.items()}
 
     def get_omic_data(self, samps=None, feats=None):
-        """Retrieves a subset of each -omic dataset's
-           samples and/or genetic features."""
+        """Retrieves a subset of each -omic dataset."""
 
         if samps is None:
-            samps = self.samples.copy()
+            samps = self.get_samples()
         if feats is None:
-            feats = self.feats.copy()
+            feats = self.get_features()
 
-        return {lbl: self.omic_data[lbl].loc[samps[lbl], feats[lbl]]
-                for lbl in self.omic_data}
+        return {coh: omic_mat.loc[samps[coh], feats[coh]]
+                for coh, omic_mat in self._omic_data.items()}
 
     @abstractmethod
     def train_pheno(self, pheno, samps=None):
-        """Returns the values corresponding to a given phenotype for the
-           training samples in each of the datasets.
-
-        Returns:
-            pheno_dict (dict)
-        """
+        return {coh: np.array([]) for coh in self._omic_data}
 
     @abstractmethod
     def test_pheno(self, pheno, samps=None):
-        """Returns the values corresponding to a given phenotype for the
-           testing samples in each of the datasets.
-
-        Returns:
-            pheno_dict (dict)
-        """
+        return {coh: np.array([]) for coh in self._omic_data}
 
     def parse_pheno(self, pheno, samps):
 
@@ -649,4 +608,42 @@ class TransferCohort(Cohort):
 
         return ({coh: phn for (coh, (phn, _)) in parse_dict.items()},
                 {coh: smps for (coh, (_, smps)) in parse_dict.items()})
+
+    @classmethod
+    def combine_cohorts(cls, *cohorts, **named_cohorts):
+        cohort_dict = dict()
+        omic_mats = dict()
+        cv_seed = None
+
+        for cohort in cohorts:
+            if not hasattr(cohort, 'cohort'):
+                raise CohortError("Unnamed cohorts must have a `cohort` "
+                                  "attribute so that they can be "
+                                  "automatically labelled during combining!")
+
+            if cohort.cohort in cohort_dict:
+                raise CohortError("Cannot pass two cohorts with the same "
+                                  "`cohort` label, pass these as unique "
+                                  "keyword arguments instead!")
+
+            cohort_dict[cohort.cohort] = cohort
+
+        for lbl, cohort in named_cohorts.items():
+            if lbl in cohort_dict:
+                raise CohortError("Cannot use custom cohort label <{}>, "
+                                  "which is the label of another cohort "
+                                  "already used!".format(lbl))
+
+            cohort_dict[lbl] = cohort
+
+        for lbl, cohort in cohort_dict.items():
+            omic_mats[lbl] = cohort.omic_data
+            test_prop[lbl] = len(cohort.get_test_samples())
+            test_prop[lbl] /= len(cohort.get_samples())
+
+            if cohort.cv_seed is not None:
+                if cv_seed is None or cv_seed > cohort.cv_seed:
+                    cv_seed = cohort.cv_seed
+
+        return cls(omic_mats, cv_seed, test_prop)
 
