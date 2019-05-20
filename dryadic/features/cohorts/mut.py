@@ -7,11 +7,11 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
     """Base class for -omic datasets predicting binary genomic phenotypes.
 
     Args:
-        expr (pandas.DataFrame, shape = [n_samps, n_features])
+        expr_mat (pandas.DataFrame, shape = [n_samps, n_features])
 
     Attributes:
-        train_mut (dryadic.features.mutations.MuTree)
-        test_mut (MuTree, optional)
+        mtree (MuTree): A hierarchical representation of the mutations present
+                        in the dataset.
 
     """
 
@@ -147,122 +147,37 @@ class BaseTransferMutationCohort(PresenceCohort, TransferCohort):
 
     Args:
         expr_dict (:obj:`dict` of :obj:`pd.DataFrame`)
-        variant_dict (:obj:`dict` of :obj:`pd.DataFrame`)
+        mut_dict (:obj:`dict` of :obj:`pd.DataFrame`)
+
+    Attributes:
+        mtree_dict (:obj:`dict` of :obj:`MuTree`)
+            A hierarchical representation of the mutations
+            present in each of the datasets.
 
     """
 
     def __init__(self,
-                 expr_dict, variant_dict,
-                 mut_genes=None, mut_levels=('Gene', 'Form'), top_genes=100,
-                 samp_cutoff=None, cv_prop=2.0/3, cv_seed=None):
+                 expr_dict, mut_dict, mut_levels, mut_genes=None,
+                 domain_dir=None, cv_seed=None, test_prop=0):
 
         if mut_genes is None:
-            self.path = None
-
-            var_df = {coh: var.loc[(var['Scale'] == 'Point')
-                                   | ((var['Scale'] == 'Copy')
-                                      & var['Copy'].isin(
-                                          ['HomDel', 'HomGain'])), :]
-                      for coh, var in variant_dict.items()}
-
-            gn_counts = {coh: var.groupby(by='Gene').Sample.nunique()
-                         for coh, var in var_df.items()}
-
-            if samp_cutoff is None:
-                use_counts = {
-                    coh: gn_cnts.sort_values(ascending=False)[:top_genes]
-                    for coh, gn_cnts in gn_counts.items()
-                    }
-
-            elif isinstance(samp_cutoff, int):
-                use_counts = {coh: gn_cnts[gn_cnts >= samp_cutoff]
-                              for coh, gn_cnts in gn_counts.items()}
-
-            elif isinstance(samp_cutoff, float):
-                use_counts = {
-                    coh: gn_cnts[
-                        gn_cnts >= samp_cutoff * len(use_samples[coh])]
-                    for coh, gn_cnts in gn_counts.items()
-                    }
-
-            elif hasattr(samp_cutoff, '__getitem__'):
-                if isinstance(samp_cutoff[0], int):
-                    use_counts = {
-                        coh: gn_cnts[(samp_cutoff[0] <= gn_cnts)
-                                     & (samp_cutoff[1] >= gn_cnts)]
-                        for coh, gn_cnts in gn_counts.items()
-                        }
-
-                elif isinstance(samp_cutoff[0], float):
-                    use_counts = {
-                        coh: gn_cnts[(samp_cutoff[0]
-                                      * len(use_samples[coh]) <= gn_cnts)
-                                     & (samp_cutoff[1]
-                                        * len(use_samples[coh]) >= gn_cnts)]
-                        for coh, gn_cnts in gn_counts.items()
-                        }
-
-            else:
-                raise ValueError("Unrecognized `samp_cutoff` argument!")
-
-            use_gns = reduce(and_,
-                             [cnts.index for cnts in use_counts.values()])
-            variants = {coh: var.loc[var['Gene'].isin(use_gns), :]
-                        for coh, var in variants.items()}
-
-        else:
-            variants = {coh: var.loc[var['Gene'].isin(mut_genes), :]
-                        for coh, var in variant_dict.items()}
-
-        split_samps = {coh: self.split_samples(cv_seed, cv_prop, expr.index)
-                       for coh, expr in expr_dict.items()}
-
-        train_samps = {coh: samps[0] for coh, samps in split_samps.items()}
-        test_samps = {coh: samps[1] for coh, samps in split_samps.items()}
-
-        self.train_mut = dict()
-        self.test_mut = dict()
-        for coh in expr_dict:
-
-            if test_samps[coh]:
-                self.test_mut[coh] = MuTree(
-                    muts=variants[coh].loc[
-                         variants[coh]['Sample'].isin(test_samps[coh]), :],
-                    levels=mut_levels
-                    )
-
-            else:
-                test_samps[coh] = None
-
-            self.train_mut[coh] = MuTree(
-                muts=variants[coh].loc[
-                     variants[coh]['Sample'].isin(train_samps[coh]), :],
-                levels=mut_levels
-                )
+            mut_dict = {coh: mut_df.loc[mut_df.Gene.isin(mut_genes)]
+                        for coh, mut_df in mut_dict.items()}
 
         self.mut_genes = mut_genes
-        self.cv_prop = cv_prop
-        super().__init__(expr_dict, train_samps, test_samps, cv_seed)
+        self.mtree_dict = {coh: MuTree(mut_dict[coh], levels=mut_levels,
+                                       domain_dir=domain_dir)
+                           for coh in expr_dict}
+
+        super().__init__(expr_dict, cv_seed, test_prop)
 
     @classmethod
     def combine_cohorts(cls, *cohorts, **named_cohorts):
         new_cohort = TransferCohort.combine_cohorts(*cohorts, **named_cohorts)
         new_cohort.__class__ = cls
 
-        new_cohort.train_mut = dict()
-        new_cohort.test_mut = dict()
-
         for cohort in cohorts:
-            new_cohort.train_mut[cohort.cohort] = cohort.train_mut
-
-            if hasattr(cohort, "test_mut"):
-                new_cohort.test_mut[cohort.cohort] = cohort.test_mut
-
-        for lbl, cohort in named_cohorts.items():
-            new_cohort.train_mut[lbl] = cohort.train_mut
-
-            if hasattr(cohort, "test_mut"):
-                new_cohort.test_mut[lbl] = cohort.test_mut
+            new_cohort.mtree_dict[cohort.cohort] = cohort.mtree
 
         return new_cohort
 
@@ -283,23 +198,23 @@ class BaseTransferMutationCohort(PresenceCohort, TransferCohort):
 
         # use all the training samples if no list of samples is provided
         if samps is None:
-            samps = {coh: sorted(smps)
-                     for coh, smps in self.train_samps.items()}
+            samps = self.get_train_samples()
 
         # otherwise, filter out the provided samples
         # not in the training cohort
         else:
-            samps = {coh: sorted(set(samps[coh]) & self.train_samps[coh])
-                     for coh in self.train_samps}
+            samps = {coh: sorted(set(samps[coh])
+                                 & set(self.get_train_samples()[coh]))
+                     for coh in self._omic_data}
  
         if isinstance(pheno, MuType) or isinstance(pheno, MutComb):
-            stat_list = {coh: self.train_mut[coh].status(samps[coh], pheno)
-                         for coh in self.train_samps}
+            stat_list = {coh: self.mtree_dict[coh].status(samps[coh], pheno)
+                         for coh in self._omic_data}
 
         elif isinstance(tuple(pheno)[0], MuType):
-            stat_list = {coh: [self.train_mut[coh].status(samps[coh], phn)
+            stat_list = {coh: [self.mtree_dict[coh].status(samps[coh], phn)
                                for phn in pheno]
-                         for coh in self.train_samps}
+                         for coh in self._omic_data}
 
         else:
             raise TypeError(
@@ -326,23 +241,23 @@ class BaseTransferMutationCohort(PresenceCohort, TransferCohort):
 
         # use all the testing samples if no list of samples is provided
         if samps is None:
-            samps = {coh: sorted(smps)
-                     for coh, smps in self.test_samps.items()}
+            samps = self.get_test_samples()
 
         # otherwise, filter out the provided samples
         # not in the testing cohort
         else:
-            samps = {coh: sorted(set(samps[coh]) & self.test_samps[coh])
-                     for coh in self.test_samps}
+            samps = {coh: sorted(set(samps[coh])
+                                 & set(self.get_test_samples()[coh]))
+                     for coh in self._omic_data}
  
         if isinstance(pheno, MuType) or isinstance(pheno, MutComb):
-            stat_list = {coh: self.test_mut[coh].status(samps[coh], pheno)
-                         for coh in self.test_samps}
+            stat_list = {coh: self.mtree_dict[coh].status(samps[coh], pheno)
+                         for coh in self._omic_data}
 
         elif isinstance(tuple(pheno)[0], MuType):
-            stat_list = {coh: [self.test_mut[coh].status(samps[coh], phn)
+            stat_list = {coh: [self.mtree_dict[coh].status(samps[coh], phn)
                                for phn in pheno]
-                         for coh in self.test_samps}
+                         for coh in self._omic_data}
 
         else:
             raise TypeError(
