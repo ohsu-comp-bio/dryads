@@ -72,7 +72,7 @@ def cross_val_predict_omic(estimator, X, y=None, groups=None,
             n_splits=cv_fold, shuffle=True,
             random_state=(random_state ** (i + 3)) % 12949671
             )
-        
+ 
         cv_iter += [
             (train_samps_indx[train],
              np.append(train_samps_indx[test], test_samps_indx))

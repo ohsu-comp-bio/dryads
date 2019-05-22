@@ -9,8 +9,8 @@ install:
         - hash -r
         - conda config --set always_yes yes --set changeps1 no
         - conda update -q conda
-        - conda update -n base conda-env
-        - conda env create
+        - conda-env update
+        - conda-env create
         - source activate dryad
 
 script:

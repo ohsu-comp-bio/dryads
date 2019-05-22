@@ -134,21 +134,21 @@ class OmicPipe(Pipeline):
     def predict_train(self,
                       cohort, pheno,
                       include_samps=None, exclude_samps=None,
-                      include_genes=None, exclude_genes=None):
+                      include_feats=None, exclude_feats=None):
         return self.predict_omic(
             cohort.train_data(pheno,
                               include_samps, exclude_samps,
-                              include_genes, exclude_genes)[0]
+                              include_feats, exclude_feats)[0]
             )
 
     def predict_test(self,
                      cohort, pheno,
                      include_samps=None, exclude_samps=None,
-                     include_genes=None, exclude_genes=None):
+                     include_feats=None, exclude_feats=None):
         return self.predict_omic(
             cohort.test_data(pheno,
                              include_samps, exclude_samps,
-                             include_genes, exclude_genes)[0]
+                             include_feats, exclude_feats)[0]
             )
 
     def predict_omic(self, omic_data):
@@ -178,7 +178,7 @@ class OmicPipe(Pipeline):
         implemented in :module:`sklearn`.
 
         Args:
-            X (array-like), shape = [n_samples, n_genes]
+            X (array-like), shape = [n_samples, n_feats]
                 A matrix of -omic values.
 
             y (array-like), shape = [n_samples, ]
@@ -209,7 +209,7 @@ class OmicPipe(Pipeline):
                  cohort, pheno,
                  tune_splits=2, test_count=8, parallel_jobs=16,
                  include_samps=None, exclude_samps=None,
-                 include_genes=None, exclude_genes=None,
+                 include_feats=None, exclude_feats=None,
                  verbose=False):
         """Tunes the pipeline by sampling over the tuning parameters."""
 
@@ -224,14 +224,14 @@ class OmicPipe(Pipeline):
             train_omics, train_pheno = cohort.train_data(
                 pheno,
                 include_samps, exclude_samps,
-                include_genes, exclude_genes
+                include_feats, exclude_feats
                 )
 
             # get internal cross-validation splits in the training set and use
             # them to tune the classifier
             tune_cvs = OmicShuffleSplit(
                 n_splits=tune_splits, test_size=0.2,
-                random_state=(cohort.cv_seed ** 2) % 42949672
+                random_state=(cohort.get_seed() ** 2) % 42949672
                 )
 
             # samples parameter combinations and tests each one
@@ -264,13 +264,13 @@ class OmicPipe(Pipeline):
     def fit_coh(self,
                 cohort, pheno,
                 include_samps=None, exclude_samps=None,
-                include_genes=None, exclude_genes=None):
+                include_feats=None, exclude_feats=None):
         """Fits a classifier."""
 
         train_omics, train_pheno = cohort.train_data(
             pheno,
             include_samps, exclude_samps,
-            include_genes, exclude_genes
+            include_feats, exclude_feats
             )
         self.fit_params_add = self.extra_fit_params(cohort)
 
@@ -279,12 +279,12 @@ class OmicPipe(Pipeline):
     def fit_transform_coh(self,
                           cohort, pheno=None,
                           include_samps=None, exclude_samps=None,
-                          include_genes=None, exclude_genes=None):
+                          include_feats=None, exclude_feats=None):
 
         train_omics, train_pheno = cohort.train_data(
             pheno,
             include_samps, exclude_samps,
-            include_genes, exclude_genes
+            include_feats, exclude_feats
             )
         self.fit_params_add = self.extra_fit_params(cohort)
 
@@ -293,21 +293,21 @@ class OmicPipe(Pipeline):
     def eval_coh(self,
                  cohort, pheno, use_train=False,
                  include_samps=None, exclude_samps=None,
-                 include_genes=None, exclude_genes=None):
+                 include_feats=None, exclude_feats=None):
         """Evaluate the performance of a classifier."""
 
         if use_train:
             test_omics, test_pheno = cohort.train_data(
                 pheno,
                 include_samps, exclude_samps,
-                include_genes, exclude_genes
+                include_feats, exclude_feats
                 )
 
         else:
             test_omics, test_pheno = cohort.test_data(
                 pheno,
                 include_samps, exclude_samps,
-                include_genes, exclude_genes
+                include_feats, exclude_feats
                 )
 
         return self.score(test_omics, test_pheno)
@@ -316,12 +316,12 @@ class OmicPipe(Pipeline):
                   cohort, pheno, force_test_samps=None,
                   infer_splits=16, infer_folds=4, parallel_jobs=8,
                   include_samps=None, exclude_samps=None,
-                  include_genes=None, exclude_genes=None):
+                  include_feats=None, exclude_feats=None):
 
         train_omics, train_pheno = cohort.train_data(
             pheno,
             include_samps, exclude_samps,
-            include_genes, exclude_genes
+            include_feats, exclude_feats
             )
 
         return cross_val_predict_omic(
@@ -329,7 +329,7 @@ class OmicPipe(Pipeline):
             force_test_samps=force_test_samps,
             cv_fold=infer_folds, cv_count=infer_splits, n_jobs=parallel_jobs,
             fit_params=self.extra_fit_params(cohort),
-            random_state=int(cohort.cv_seed ** 1.5) % 42949672,
+            random_state=int(cohort.get_seed() ** 1.5) % 42949672,
             )
 
     def get_coef(self):
