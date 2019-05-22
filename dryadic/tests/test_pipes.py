@@ -57,8 +57,9 @@ def main():
     mut_data = pd.read_csv(os.path.join(data_dir, "variants.txt.gz"),
                            sep='\t', index_col=0)
 
-    cdata = BaseMutationCohort(expr_data, mut_data, mut_genes=['GATA3'],
-                               cv_prop=0.7, cv_seed=101)
+    cdata = BaseMutationCohort(expr_data, mut_data,
+                               mut_levels=['Gene'], mut_genes=['GATA3'],
+                               cv_seed=101, test_prop=0.3)
     test_mtype = MuType({('Gene', 'GATA3'): None})
 
     clf = Lasso_test()
