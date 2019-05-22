@@ -187,7 +187,7 @@ def log_norm(data_mat):
     """Log-normalizes a dataset, usually RNA-seq expression.
 
     Puts a matrix of continuous values into log-space after adding
-    a constant derived from the smallest non-zero value.
+    a constant derived from the smallest non-zero values.
 
     Args:
         data_mat (:obj:`np.array` of :obj:`float`,
@@ -204,8 +204,57 @@ def log_norm(data_mat):
                  [ 1.32192809,  3.08746284]]
 
     """
-    log_add = np.nanmin(data_mat[data_mat > 0]) * 0.5
+    log_add = np.min(data_mat[data_mat > 0], axis=0).quantile(0.25)
     norm_mat = np.log2(data_mat + log_add)
 
     return norm_mat
+
+
+def drop_duplicate_genes(expr_mat):
+    gene_counts = expr_mat.columns.value_counts()
+    dup_genes = gene_counts.index[gene_counts > 1]
+    new_expr = expr_mat.copy()
+ 
+    for dup_gene in dup_genes:
+        gn_indx = np.argwhere(new_expr.columns.get_loc(dup_gene)).flatten()
+        use_indx = new_expr.iloc[:, gn_indx].sum().values.argmax()
+ 
+        rmv_indxs = gn_indx[:use_indx].tolist()
+        rmv_indxs += gn_indx[(use_indx + 1):].tolist()
+        new_expr = new_expr.iloc[:, [i for i in range(new_expr.shape[1])
+                                     if i not in rmv_indxs]]
+
+    return new_expr
+
+
+def choose_freq_genes(mut_df, samp_cutoff=None, top_genes=50):
+    var_df = mut_df.loc[(mut_df.Scale == 'Point')
+                        | ((mut_df.Scale == 'Copy')
+                           & mut_df.Copy.isin(['DeepDel', 'DeepGain']))]
+ 
+    gn_counts = var_df.groupby(by='Gene').Sample.nunique()
+    if samp_cutoff is None:
+        gn_counts = gn_counts.sort_values(ascending=False)
+        cutoff_mask = [True] * min(top_genes, len(gn_counts))
+        cutoff_mask += [False] * max(len(gn_counts) - top_genes, 0)
+
+    elif isinstance(samp_cutoff, int):
+        cutoff_mask = gn_counts >= samp_cutoff
+
+    elif isinstance(samp_cutoff, float):
+        cutoff_mask = gn_counts >= samp_cutoff * expr.shape[0]
+ 
+    elif hasattr(samp_cutoff, '__getitem__'):
+        if isinstance(samp_cutoff[0], int):
+            cutoff_mask = samp_cutoff[0] <= gn_counts
+            cutoff_mask &= (samp_cutoff[1] >= gn_counts)
+
+        elif isinstance(samp_cutoff[0], float):
+            cutoff_mask = (samp_cutoff[0] * expr.shape[0]) <= gn_counts
+            cutoff_mask &= (samp_cutoff[1] * expr.shape[0]) >= gn_counts
+ 
+    else:
+        raise TypeError("Unrecognized type of `samp_cutoff` argument!")
+
+    return gn_counts[cutoff_mask]
 

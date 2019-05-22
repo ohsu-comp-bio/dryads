@@ -500,6 +500,12 @@ class MuTree(object):
 
         return key_item
 
+    def __eq__(self, other):
+        if not isinstance(other, MuTree):
+            return False
+
+        return self._child == other._child
+
     def __str__(self):
         """Printing a MuTree shows each of the branches of the tree and
            the samples at the end of each branch."""
@@ -560,6 +566,10 @@ class MuTree(object):
             newick_str = gsub(',$', '', newick_str) + ';'
 
         return newick_str
+
+    def __hash__(self):
+        mut_str = self.get_newick()
+        return hash(tuple(mut_str.count(k) for k in sorted(set(mut_str))))
 
     def get_levels(self):
         """Gets all the levels present in this tree and its children."""
