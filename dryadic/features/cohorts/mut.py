@@ -1,5 +1,5 @@
 
-from .base import UniCohort, PresenceCohort, TransferCohort
+from .base import UniCohort, PresenceCohort, ValueCohort, TransferCohort
 from ..mutations import *
 
 
@@ -8,6 +8,11 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
 
     Args:
         expr_mat (pandas.DataFrame, shape = [n_samps, n_features])
+        mut_df (pandas.DataFrame, shape = [n_muts, n_fields])
+        cv_seed (int), optional: Seed used for random sampling.
+        test_prop (float), optional: Proportion of cohort's samples that will
+                                     be used for testing. Default is to not
+                                     have a testing sub-cohort.
 
     Attributes:
         mtree (MuTree): A hierarchical representation of the mutations present
@@ -142,6 +147,90 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
         return super().data_hash(), hash(self.mtree)
 
 
+class BaseCopyCohort(ValueCohort, UniCohort):
+    """Base class for -omic datasets predicting continuous copy number scores.
+
+    Args:
+        expr_mat (pandas.DataFrame, shape = [n_samps, n_features])
+        copy_mat (pandas.DataFrame, shape = [n_samps, n_features])
+        cv_seed (int), optional: Seed used for random sampling.
+        test_prop (float), optional: Proportion of cohort's samples that will
+                                     be used for testing. Default is to not
+                                     have a testing sub-cohort.
+
+    """
+
+    def __init__(self,
+                 expr_mat, copy_mat, copy_genes=None,
+                 cv_seed=None, test_prop=0):
+        if copy_genes is not None:
+            copy_mat = copy_mat[copy_genes]
+
+        self.copy_mat = copy_mat
+        self.mut_genes = copy_genes
+
+        super().__init__(expr_mat, cv_seed, test_prop)
+
+    def train_pheno(self, pheno, samps=None):
+        """Gets the mutation status of samples in the training cohort.
+
+        Args:
+            samps (:obj:`list` of :obj:`str`, optional)
+                A list of samples, of which those not in the training cohort
+                will be ignored. Defaults to using all the training samples.
+
+        Returns:
+            stat_list (:obj:`list` of :obj:`float`)
+
+        """
+
+        # use all the training samples if no list of samples is provided
+        if samps is None:
+            samps = self.get_train_samples()
+
+        # otherwise, filter out the provided samples
+        # not in the training cohort
+        else:
+            samps = sorted(set(samps) & set(self.get_train_samples()))
+
+        if isinstance(pheno, str):
+            stat_list = self.copy_mat.loc[samps, pheno]
+
+        else:
+            raise TypeError("A copy phenotype must be a string!")
+
+        return stat_list
+
+    def test_pheno(self, pheno, samps=None):
+        """Gets the mutation status of samples in the testing cohort.
+
+        Args:
+            samps (:obj:`list` of :obj:`str`, optional)
+                A list of samples, of which those not in the testing cohort
+                will be ignored. Defaults to using all the testing samples.
+
+        Returns:
+            stat_list (:obj:`list` of :obj:`float`)
+
+        """
+
+        # use all the testing samples if no list of samples is provided
+        if samps is None:
+            samps = self.get_test_samples()
+
+        # otherwise, filter out the provided samples not in the testing cohort
+        else:
+            samps = sorted(set(samps) & set(self.get_test_samples()))
+       
+        if isinstance(pheno, str):
+            stat_list = self.copy_mat.loc[samps, pheno]
+
+        else:
+            raise TypeError("A copy phenotype must be a string!")
+
+        return stat_list
+
+
 class BaseTransferMutationCohort(PresenceCohort, TransferCohort):
     """Mutiple datasets used to predict mutations using transfer learning.
 
@@ -192,7 +281,7 @@ class BaseTransferMutationCohort(PresenceCohort, TransferCohort):
                 will be ignored. Defaults to using all the training samples.
 
         Returns:
-            stat_list (:obj:`list` of :obj:`bool`)
+            stat_dict (dict)
 
         """
 
@@ -208,11 +297,11 @@ class BaseTransferMutationCohort(PresenceCohort, TransferCohort):
                      for coh in self._omic_data}
  
         if isinstance(pheno, MuType) or isinstance(pheno, MutComb):
-            stat_list = {coh: self.mtree_dict[coh].status(samps[coh], pheno)
+            stat_dict = {coh: self.mtree_dict[coh].status(samps[coh], pheno)
                          for coh in self._omic_data}
 
         elif isinstance(tuple(pheno)[0], MuType):
-            stat_list = {coh: [self.mtree_dict[coh].status(samps[coh], phn)
+            stat_dict = {coh: [self.mtree_dict[coh].status(samps[coh], phn)
                                for phn in pheno]
                          for coh in self._omic_data}
 
@@ -222,7 +311,7 @@ class BaseTransferMutationCohort(PresenceCohort, TransferCohort):
                 "lists thereof as training phenotypes!"
                 )
 
-        return stat_list
+        return stat_dict
 
     def test_pheno(self, pheno, samps=None):
         """Gets the mutation status of samples in the testing cohort.
@@ -235,7 +324,7 @@ class BaseTransferMutationCohort(PresenceCohort, TransferCohort):
                 will be ignored. Defaults to using all the testing samples.
 
         Returns:
-            stat_list (:obj:`list` of :obj:`bool`)
+            stat_dict
 
         """
 
@@ -251,11 +340,11 @@ class BaseTransferMutationCohort(PresenceCohort, TransferCohort):
                      for coh in self._omic_data}
  
         if isinstance(pheno, MuType) or isinstance(pheno, MutComb):
-            stat_list = {coh: self.mtree_dict[coh].status(samps[coh], pheno)
+            stat_dict = {coh: self.mtree_dict[coh].status(samps[coh], pheno)
                          for coh in self._omic_data}
 
         elif isinstance(tuple(pheno)[0], MuType):
-            stat_list = {coh: [self.mtree_dict[coh].status(samps[coh], phn)
+            stat_dict = {coh: [self.mtree_dict[coh].status(samps[coh], phn)
                                for phn in pheno]
                          for coh in self._omic_data}
 
@@ -265,5 +354,5 @@ class BaseTransferMutationCohort(PresenceCohort, TransferCohort):
                 "lists thereof as testing phenotypes!"
                 )
 
-        return stat_list
+        return stat_dict
 
