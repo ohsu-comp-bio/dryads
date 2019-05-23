@@ -173,6 +173,9 @@ class UniCohort(Cohort):
             raise TypeError("`omic_mat` must be a pandas DataFrame, found "
                             "{} instead!".format(type(omic_mat)))
 
+        if len(set(omic_mat.index)) != omic_mat.shape[0]:
+            raise CohortError("Duplicate sample names in -omic dataset!")
+
         super().__init__(omic_mat, cv_seed, test_prop)
 
     def get_samples(self):
@@ -362,7 +365,7 @@ class PresenceCohort(Cohort):
            a phenotype for each of the samples in the training sub-cohort.
 
         Returns:
-            pheno_vec (:obj:`list` of :obj:`bool`)
+            pheno_vec (:obj:`array-like` of :obj:`bool`)
         """
 
     @abstractmethod
@@ -371,10 +374,10 @@ class PresenceCohort(Cohort):
            a phenotype for each of the samples in the testing sub-cohort.
 
         Returns:
-            pheno_vec (:obj:`list` of :obj:`bool`)
+            pheno_vec (:obj:`array-like` of :obj:`bool`)
         """
 
-    def mutex_test(self, pheno1, pheno2):
+    def mutex_test(self, pheno1, pheno2, **fisher_args):
         """Tests the mutual exclusivity of two phenotypes.
 
         Args:
@@ -400,10 +403,45 @@ class PresenceCohort(Cohort):
         pheno2_vec = self.train_pheno(pheno2)
         conting_df = pd.DataFrame({'ph1': pheno1_vec, 'ph2': pheno2_vec})
 
-        return fisher_exact(
-            table=pd.crosstab(conting_df['ph1'], conting_df['ph2']),
-            alternative='less'
-            )[1]
+        return fisher_exact(table=pd.crosstab(conting_df['ph1'],
+                                              conting_df['ph2']),
+                            **fisher_args)
+
+
+class ValueCohort(Cohort):
+    """Abstract class for -omic datasets predicting continuous phenotypes.
+
+    This class is used to predict features such as the allele frequency of a
+    particular mutation, the GISTIC score of a copy number number event, the
+    response to a drug intervention as measured by AUC, etc.
+
+    """
+
+    @abstractmethod
+    def train_pheno(self, pheno, samps=None):
+        """Returns the continuous scores corresponding to the value of
+           a phenotype for each of the samples in the training sub-cohort.
+
+        Returns:
+            pheno_vec (:obj:`array-like` of :obj:`float`)
+        """
+
+    @abstractmethod
+    def test_pheno(self, pheno, samps=None):
+        """Returns the continuous scores corresponding to the value of
+           a phenotype for each of the samples in the testing sub-cohort.
+
+        Returns:
+            pheno_vec (:obj:`array-like` of :obj:`float`)
+        """
+
+    def corr_test(self, pheno1, pheno2):
+        """Tests the correlation between two phenotypes.
+
+        Args:
+            pheno1, pheno2: A pair of phenotypes stored in this cohort.
+
+        """
 
 
 class TransferCohort(Cohort):
@@ -431,6 +469,10 @@ class TransferCohort(Cohort):
                 raise TypeError("`omic_mats` must have pandas DataFrames as "
                                 "values, found {} instead for "
                                 "cohort {}!".format(type(omic_mat), coh))
+
+            if len(set(omic_mat.index)) != omic_mat.shape[0]:
+                raise CohortError("Duplicate sample names found in -omic "
+                                  "dataset for cohort {}!".format(coh))
 
         super().__init__(omic_mats, cv_seed, test_prop)
 

@@ -10,7 +10,6 @@ install:
         - conda config --set always_yes yes --set changeps1 no
         - conda update -q conda
         - conda-env update
-        - conda-env create
         - source activate dryad
 
 script:

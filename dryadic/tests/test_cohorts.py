@@ -98,6 +98,10 @@ def main():
         "Domain PF00870 mutation on the 5th Exon!"
         )
 
+    assert (cdata.mutex_test(
+        MuType({('Domain_Pfam', 'PF00870'): None}),
+        MuType({('Domain_Pfam', 'None'): None}))) == (0, 1)
+
     print("All Cohort tests passed successfully!")
 
 

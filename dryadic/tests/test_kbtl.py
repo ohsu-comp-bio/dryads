@@ -75,9 +75,9 @@ def main():
     mult_mtypes = [MuType({('Gene', 'TP53'): None}),
                    MuType({('Gene', 'GATA3'): None})]
 
-    uni_cdata = BaseMutationCohort(expr_data, mut_data,
+    uni_cdata = BaseMutationCohort(expr_data, mut_data, mut_levels=['Gene'],
                                    mut_genes=['TP53', 'GATA3'],
-                                   cv_prop=0.7, cv_seed=101)
+                                   cv_seed=101, test_prop=0.3)
 
     sing_clf.tune_coh(uni_cdata, mult_mtypes,
                       test_count=4, tune_splits=2, parallel_jobs=1)
@@ -98,10 +98,10 @@ def main():
         "KBTL model did not obtain a testing AUC of at least 0.6!"
         )
 
-    trs_cdata = BaseTransferMutationCohort(
-        expr_dict=expr_dict, variant_dict=mut_dict,
-        mut_genes=['TP53', 'GATA3'], cv_prop=0.7, cv_seed=101
-        )
+    trs_cdata = BaseTransferMutationCohort(expr_dict, mut_dict,
+                                           mut_levels=['Gene'],
+                                           mut_genes=['TP53', 'GATA3'],
+                                           cv_seed=101, test_prop=0.3)
 
     mult_clf.tune_coh(trs_cdata, sing_mtype,
                       test_count=4, tune_splits=2, parallel_jobs=1)
