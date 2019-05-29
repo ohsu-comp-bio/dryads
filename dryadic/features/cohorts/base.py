@@ -347,7 +347,7 @@ class UniCohort(Cohort):
         return np.array([])
 
     def data_hash(self):
-        return tuple(dict(self._omic_data.sum().round(5)).items())
+        return tuple(sorted(dict(self._omic_data.sum().round(5)).items()))
 
 
 class PresenceCohort(Cohort):

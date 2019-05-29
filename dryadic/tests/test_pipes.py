@@ -1,52 +1,15 @@
 
 import os
-base_dir = os.path.dirname(__file__)
-
 import sys
+base_dir = os.path.dirname(__file__)
 sys.path.extend([os.path.join(base_dir, '../..')])
 
 from dryadic.features.cohorts import BaseMutationCohort
 from dryadic.features.mutations import MuType
-from dryadic.learning.pipelines import PresencePipe, LinearPipe
-from dryadic.learning.selection import SelectMeanVar
+from dryadic.learning.classifiers import Lasso, SVCrbf
 
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import LogisticRegression
-from sklearn.svm import SVC
-
-
-class Lasso_test(PresencePipe, LinearPipe):
-
-    tune_priors = (
-        ('feat__mean_perc', (93, 87, 61, 49)),
-        ('fit__C', tuple(10 ** np.linspace(1, 5, 40))),
-        )
-
-    feat_inst = SelectMeanVar(var_perc=100)
-    norm_inst = StandardScaler()
-    fit_inst = LogisticRegression(penalty='l1', max_iter=50,
-                                  class_weight='balanced')
-
-    def __init__(self):
-        super().__init__([('feat', self.feat_inst), ('norm', self.norm_inst),
-                          ('fit', self.fit_inst)])
-
-
-class SVC_test(PresencePipe):
-
-    tune_priors = (
-        ('fit__C', (0.1, 0.5, 1., 2.)),
-        )
-
-    feat_inst = SelectMeanVar(mean_perc=70, var_perc=98)
-    norm_inst = StandardScaler()
-    fit_inst = SVC(kernel='rbf', probability=True)
-
-    def __init__(self):
-        super().__init__([('feat', self.feat_inst), ('norm', self.norm_inst),
-                          ('fit', self.fit_inst)])
 
 
 def main():
@@ -62,7 +25,7 @@ def main():
                                cv_seed=101, test_prop=0.3)
     test_mtype = MuType({('Gene', 'GATA3'): None})
 
-    clf = Lasso_test()
+    clf = Lasso()
     clf, cvs = clf.tune_coh(cdata, test_mtype,
                             test_count=16, tune_splits=4, parallel_jobs=1)
 
@@ -102,7 +65,7 @@ def main():
         "Pipeline inference did not produce scores for each sample!"
         )
 
-    clf = SVC_test()
+    clf = SVCrbf()
     clf.tune_coh(cdata, test_mtype,
                  test_count=4, tune_splits=2, parallel_jobs=1)
     clf.fit_coh(cdata, test_mtype)

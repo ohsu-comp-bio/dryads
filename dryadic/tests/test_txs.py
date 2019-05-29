@@ -43,8 +43,8 @@ def main():
     mut_data = pd.read_csv(os.path.join(data_dir, "variants.txt.gz"),
                            sep='\t', index_col=0)
 
-    cdata = BaseMutationCohort(expr_data, mut_data, mut_genes=['TP53'],
-                               cv_prop=0.8, cv_seed=987)
+    cdata = BaseMutationCohort(expr_data, mut_data, mut_levels=['Gene'],
+                               mut_genes=['TP53'], cv_seed=987, test_prop=0.2)
     test_mtype = MuType({('Gene', 'TP53'): None})
 
     tx_clf = StanTranscripts()
