@@ -1,7 +1,7 @@
 import setuptools
 
 setuptools.setup(name='dryad',
-      version='0.4b0',
+      version='0.4b1',
       description='Prediction of Cancer Phenotypes Using Mutation Trees',
       author='Michal Radoslaw Grzadkowski',
       author_email='grzadkow@ohsu.edu',

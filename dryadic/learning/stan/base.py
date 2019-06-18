@@ -92,9 +92,9 @@ class StanVariational(BaseStan):
     def get_var_means(self):
         var_means = {}
 
-        for var, val in zip(self.fit_obj['sampler_param_names'],
+        for var, val in zip(self.fit_obj['mean_par_names'],
                             self.fit_obj['mean_pars']):
-            var_parse = var.split('.')
+            var_parse = var.split('[')
 
             if len(var_parse) == 1:
                 var_means[var_parse[0]] = val
@@ -121,6 +121,7 @@ class StanSampling(BaseStan):
         var_means = {}
 
         for var, val in zip(self.fit_obj.flatnames, self.fit_summary[:, 0]):
+            # TODO: make parsing of Stan model arrays more sophisticated
             var_parse = var.split('[')
 
             if len(var_parse) == 1:

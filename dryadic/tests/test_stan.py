@@ -1,15 +1,14 @@
 
 import os
-base_dir = os.path.dirname(__file__)
-
 import sys
+base_dir = os.path.dirname(__file__)
 sys.path.extend([os.path.join(base_dir, '../..')])
 
 from dryadic.features.cohorts import BaseMutationCohort
 from dryadic.features.mutations import MuType
 from dryadic.learning.pipelines import PresencePipe
 
-from dryadic.learning.stan.base import StanOptimizing
+from dryadic.learning.stan.base import StanOptimizing, StanVariational
 from dryadic.learning.stan.logistic import *
 from dryadic.learning.stan.margins import GaussLabels
 from dryadic.learning.stan.margins import gauss_model as overlap_model
@@ -21,13 +20,19 @@ from sklearn.preprocessing import StandardScaler
 class OptimLogistic(BaseLogistic, StanOptimizing):
  
     def run_model(self, **fit_params):
-        super().run_model(**{**fit_params, **{'iter': 1e2}})
+        super().run_model(**{**fit_params, **{'iter': 100}})
 
 
 class OptimOverlap(GaussLabels, StanOptimizing):
  
     def run_model(self, **fit_params):
-        super().run_model(**{**fit_params, **{'iter': 1e3}})
+        super().run_model(**{**fit_params, **{'iter': 1000}})
+
+
+class VaritOverlap(BaseLogistic, StanVariational):
+ 
+    def run_model(self, **fit_params):
+        super().run_model(**{**fit_params, **{'iter': 500}})
 
 
 class StanLogistic(PresencePipe):
@@ -40,9 +45,18 @@ class StanLogistic(PresencePipe):
 
 
 class StanOverlap(PresencePipe):
-    
+ 
     norm_inst = StandardScaler()
     fit_inst = OptimOverlap(alpha=1./23, model_code=overlap_model)
+
+    def __init__(self):
+        super().__init__([('norm', self.norm_inst), ('fit', self.fit_inst)])
+
+
+class StanVarit(PresencePipe):
+ 
+    norm_inst = StandardScaler()
+    fit_inst = VaritOverlap(alpha=1./23, model_code=gauss_model)
 
     def __init__(self):
         super().__init__([('norm', self.norm_inst), ('fit', self.fit_inst)])
@@ -60,16 +74,16 @@ def main():
                                mut_genes=['TP53'], cv_seed=987, test_prop=0.8)
     test_mtype = MuType({('Gene', 'TP53'): None})
 
-    log_clf = StanLogistic()
-    log_clf.fit_coh(cdata, test_mtype)
+    ovp_clf = StanOverlap()
+    ovp_clf.fit_coh(cdata, test_mtype)
 
-    train_auc = log_clf.eval_coh(cdata, test_mtype, use_train=True)
+    train_auc = ovp_clf.eval_coh(cdata, test_mtype, use_train=True)
     print("Stan logistic model training AUC: {:.3f}".format(train_auc))
     assert train_auc >= 0.7, (
         "Stan logistic model did not obtain a training AUC of at least 0.7!"
         )
 
-    test_auc = log_clf.eval_coh(cdata, test_mtype, use_train=False)
+    test_auc = ovp_clf.eval_coh(cdata, test_mtype, use_train=False)
     print("Stan logistic model testing AUC: {:.3f}".format(test_auc))
     assert test_auc >= 0.7, (
         "Stan logistic model did not obtain a testing AUC of at least 0.7!"
@@ -89,6 +103,10 @@ def main():
     assert test_auc >= 0.7, (
         "Stan overlap model did not obtain a testing AUC of at least 0.7!"
         )
+
+    log_clf = StanVarit()
+    log_clf.fit_coh(cdata, test_mtype)
+    train_auc = log_clf.eval_coh(cdata, test_mtype, use_train=True)
 
     print("All Stan learning tests passed successfully!")
 

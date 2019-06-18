@@ -1,8 +1,7 @@
 
 import os
-base_dir = os.path.dirname(__file__)
-
 import sys
+base_dir = os.path.dirname(__file__)
 sys.path.extend([os.path.join(base_dir, '../..')])
 
 from dryadic.features.cohorts import BaseMutationCohort
