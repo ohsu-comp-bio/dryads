@@ -66,6 +66,8 @@ def cross_val_predict_omic(estimator, X, y=None, groups=None,
 
     else:
         y_use = y.reshape(-1)
+        if len(np.unique(y_use)) > 10:
+            y_use = y_use > np.percentile(y_use, 50)
 
     for i in range(cv_rep):
         cv = StratifiedKFold(

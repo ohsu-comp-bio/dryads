@@ -6,7 +6,8 @@ sys.path.extend([os.path.join(base_dir, '../..')])
 
 from dryadic.features.cohorts import BaseMutationCohort
 from dryadic.features.mutations import MuType
-from dryadic.learning.classifiers import Lasso, SVCrbf
+from dryadic.learning.classifiers import Lasso, RidgeWhite, SVCrbf
+from dryadic.learning.regressors import OmicRidge
 
 import numpy as np
 import pandas as pd
@@ -65,10 +66,18 @@ def main():
         "Pipeline inference did not produce scores for each sample!"
         )
 
+    clf = RidgeWhite()
+    clf.tune_coh(cdata, test_mtype,
+                 test_count=4, tune_splits=2, parallel_jobs=1)
+    clf.fit_coh(cdata, test_mtype)
+
     clf = SVCrbf()
     clf.tune_coh(cdata, test_mtype,
                  test_count=4, tune_splits=2, parallel_jobs=1)
     clf.fit_coh(cdata, test_mtype)
+
+    infer_mat = clf.infer_coh(cdata, test_mtype,
+                              infer_splits=4, infer_folds=4, parallel_jobs=1)
 
     print("All pipeline tests passed successfully!")
 

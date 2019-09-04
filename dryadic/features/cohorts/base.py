@@ -28,25 +28,26 @@ class Cohort(object):
 
     """
 
-    def __init__(self, omic_data, cv_seed, test_prop):
+    def __init__(self, omic_data, cv_seed, test_prop, test_samps):
         self._omic_data = omic_data
         self._cv_seed = cv_seed
-        self._train_samps, self._test_samps = self._split_samples(test_prop)
+        self._train_samps, self._test_samps = self._split_samples(
+            test_prop, test_samps)
 
     @abstractmethod
     def get_samples(self, include_samps=None, exclude_samps=None):
         """Retrieves the samples for which -omic data is available."""
 
     @abstractmethod
-    def _split_samples(self, test_prop):
+    def _split_samples(self, test_prop, test_samps):
         """Splits a list of samples into training and testing sub-cohorts."""
 
     def get_seed(self):
         """Retrieves the seed used for random sampling from the cohort."""
         return self._cv_seed
 
-    def update_seed(self, new_seed, test_prop=None):
-        """Updates the sampling seed, and optionally the train/test split.
+    def update_split(self, new_seed=None, test_prop=None, test_samps=None):
+        """Updates the training/testing subcohort split.
 
         This method is used to change the random sampling seed used by this
         cohort for learning tasks. The default behaviour is to leave the split
@@ -61,11 +62,12 @@ class Cohort(object):
                 The new proportion of samples to use for testing.
 
         """
-        self._cv_seed = new_seed
+        if new_seed is not None:
+            self._cv_seed = new_seed
 
-        if test_prop is not None:
+        if test_prop is not None or test_samps is not None:
             self._train_samps, self._test_samps = self._split_samples(
-                test_prop)
+                test_prop, test_samps)
 
     @abstractmethod
     def get_train_samples(self, include_samps=None, exclude_samps=None):
@@ -111,6 +113,9 @@ class Cohort(object):
         if pheno is not None:
             pheno_data, samps = self.parse_pheno(
                 self.test_pheno(pheno, samps), samps)
+
+        else:
+            pheno_data = None
 
         return self.get_omic_data(samps, feats), pheno_data
 
@@ -168,7 +173,7 @@ class UniCohort(Cohort):
 
     """
 
-    def __init__(self, omic_mat, cv_seed, test_prop):
+    def __init__(self, omic_mat, cv_seed, test_prop, test_samps=None):
         if not isinstance(omic_mat, pd.DataFrame):
             raise TypeError("`omic_mat` must be a pandas DataFrame, found "
                             "{} instead!".format(type(omic_mat)))
@@ -176,7 +181,7 @@ class UniCohort(Cohort):
         if len(set(omic_mat.index)) != omic_mat.shape[0]:
             raise CohortError("Duplicate sample names in -omic dataset!")
 
-        super().__init__(omic_mat, cv_seed, test_prop)
+        super().__init__(omic_mat, cv_seed, test_prop, test_samps)
 
     def get_samples(self):
         """Retrieves all samples in the -omic dataset.
@@ -187,7 +192,7 @@ class UniCohort(Cohort):
         """
         return self._omic_data.index.tolist()
 
-    def _split_samples(self, test_prop):
+    def _split_samples(self, test_prop, test_samps):
         """Splits the dataset's samples into training and testing subsets.
 
         Args:
@@ -200,7 +205,11 @@ class UniCohort(Cohort):
             test_samps (set): The samples for the testing sub-cohort.
 
         """
-        if test_prop < 0 or test_prop >= 1:
+        if test_prop is not None and test_samps is not None:
+            raise ValueError("Cannot specify both a new testing proportion "
+                             "and a new set of testing samples!")
+
+        if test_prop is not None and (test_prop < 0 or test_prop >= 1):
             raise ValueError("Improper testing sample ratio that is not at "
                              "least zero and less than one!")
 
@@ -212,18 +221,24 @@ class UniCohort(Cohort):
 
         # if not all samples are to be in the training sub-cohort, randomly
         # choose samples for the testing cohort...
-        if test_prop > 0:
-            train_samps = set(random.sample(population=sorted(tuple(samps)),
-                                            k=int(round(len(samps)
-                                                        * (1 - test_prop)))))
-            test_samps = set(samps) - train_samps
+        if test_prop is not None:
+            if test_prop > 0:
+                train_samps = set(random.sample(
+                    population=sorted(tuple(samps)),
+                    k=int(round(len(samps) * (1 - test_prop)))
+                    ))
+
+            else:
+                train_samps = set(samps)
+
+        elif test_samps is not None:
+            train_samps = set(samps) - set(test_samps)
 
         # ...otherwise, copy the sample list to create the training cohort
         else:
             train_samps = set(samps)
-            test_samps = set()
 
-        return train_samps, test_samps
+        return train_samps, set(samps) - train_samps
 
     def get_train_samples(self, include_samps=None, exclude_samps=None):
         """Gets a subset of the samples in the cohort used for training.

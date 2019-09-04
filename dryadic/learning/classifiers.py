@@ -21,6 +21,7 @@ prefer a different set of values.
 
 from .pipelines import PresencePipe, LinearPipe
 from .selection import SelectMeanVar
+from .scalers import center_scale
 import numpy as np
 
 from sklearn.preprocessing import StandardScaler, Normalizer
@@ -119,6 +120,17 @@ class RidgeFlat(Ridge):
         )
 
     norm_inst2 = Normalizer()
+
+    def __init__(self):
+        super(Base, self).__init__([
+            ('feat', self.feat_inst), ('norm', self.norm_inst),
+            ('norm2', self.norm_inst2), ('fit', self.fit_inst)
+            ])
+
+
+class RidgeWhite(Ridge):
+
+    norm_inst2 = center_scale
 
     def __init__(self):
         super(Base, self).__init__([

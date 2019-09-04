@@ -130,11 +130,10 @@ class MuType(object):
 
         # collapses category labels with the same subtype into one key:subtype
         # pair, i.e. silent:None, frameshift:None => (silent, frameshift):None
-        uniq_vals = [
-            (frozenset(k for k, v in full_dict.items() if v == sub_type),
-             sub_type)
-            for sub_type in set(full_dict.values())
-            ]
+        uniq_vals = [(frozenset(sorted(k for k, v in full_dict.items()
+                                       if v == sub_type)),
+                      sub_type)
+                     for sub_type in set(full_dict.values())]
 
         # merges the subtypes of type dictionary entries with the same
         # category label, i.e. silent: <Exon IS 7/11>, silent: <Exon IS 10/11>
@@ -246,6 +245,12 @@ class MuType(object):
 
         if not isinstance(other, MuType):
             return NotImplemented
+
+        # handles case where at least one of the MuTypes is empty
+        if self.is_empty() and not other.is_empty():
+            return True
+        if other.is_empty():
+            return False
 
         # we first compare the mutation property levels of the two MuTypes...
         if self.cur_level == other.cur_level:
@@ -460,6 +465,7 @@ class MuType(object):
                     if not new_ch.is_empty():
                         new_key.update({(self.cur_level, lbl): new_ch})
 
+        #TODO: better rules mismatching annotation levels
         elif other.cur_level in self.get_levels():
             for lbl in self_dict.keys():
 

@@ -542,7 +542,7 @@ class MuTree(object):
             return iter(sorted(
                 [("0", branch) if lbl == '.' else (lbl, branch)
                  for lbl, branch in self._child.items()],
-                key=lambda x: int(x[0].split('/')[0])
+                key=lambda x: int(gsub('[^0-9]', '0', x[0].split('/')[0]))
                 ))
 
         else:
