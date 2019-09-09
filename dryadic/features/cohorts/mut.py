@@ -21,15 +21,54 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
     """
 
     def __init__(self,
-                 expr_mat, mut_df, mut_levels, mut_genes=None,
+                 expr_mat, mut_df, mut_levels=None, mut_genes=None,
                  domain_dir=None, cv_seed=None, test_prop=0):
         if mut_genes is not None:
             mut_df = mut_df.loc[mut_df.Gene.isin(mut_genes)]
 
-        self.mtree = MuTree(mut_df, levels=mut_levels, domain_dir=domain_dir)
         self.mut_genes = mut_genes
+        self.muts = mut_df
+        self.domain_dir = domain_dir
+        self.mtrees = dict()
+
+        if mut_levels is None:
+            self.add_mut_lvls(('Gene', ))
+
+        else:
+            for lvls in mut_levels:
+                self.add_mut_lvls(lvls)
 
         super().__init__(expr_mat, cv_seed, test_prop)
+
+    def add_mut_lvls(self, lvls):
+        self.mtrees[tuple(lvls)] = MuTree(self.muts, levels=lvls,
+                                          domain_dir=self.domain_dir)
+
+    def choose_mtree(self, pheno):
+        if isinstance(pheno, MuType):
+            phn_lvls = pheno.get_sorted_levels()
+
+            if not phn_lvls:
+                mtree_lvls = tuple(self.mtrees)[0]
+            elif phn_lvls in self.mtrees:
+                mtree_lvls = phn_lvls
+
+            else:
+                for mut_lvls, mtree in self.mtrees.items():
+                    if mtree.match_levels(pheno):
+                        mtree_lvls = mut_lvls
+                        break
+
+                else:
+                    self.add_mut_lvls(phn_lvls)
+                    mtree_lvls = phn_lvls
+
+        elif isinstance(pheno, MutComb):
+            for mtype in pheno.mtypes:
+                mtree_lvls = [self.choose_mtree(mtype)
+                              for mtype in pheno.mtypes]
+
+        return mtree_lvls
 
     def train_pheno(self, pheno, samps=None):
         """Gets the mutation status of samples in the training cohort.
@@ -56,7 +95,8 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
             samps = sorted(set(samps) & set(self.get_train_samples()))
  
         if isinstance(pheno, MuType) or isinstance(pheno, MutComb):
-            stat_list = self.mtree.status(samps, pheno)
+            mtree_lvls = self.choose_mtree(pheno)
+            stat_list = self.mtrees[mtree_lvls].status(samps, pheno)
 
         elif isinstance(pheno, dict):
             stat_list = self.cna_pheno(pheno, samps)
@@ -99,7 +139,8 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
             samps = sorted(set(samps) & set(self.get_test_samples()))
         
         if isinstance(pheno, MuType) or isinstance(pheno, MutComb):
-            stat_list = self.mtree.status(samps, pheno)
+            mtree_lvls = self.choose_mtree(pheno)
+            stat_list = self.mtrees[mtree_lvls].status(samps, pheno)
 
         elif isinstance(pheno, dict):
             stat_list = self.cna_pheno(pheno, samps)

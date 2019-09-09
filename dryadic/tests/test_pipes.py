@@ -22,7 +22,7 @@ def main():
                            sep='\t', index_col=0)
 
     cdata = BaseMutationCohort(expr_data, mut_data,
-                               mut_levels=['Gene'], mut_genes=['GATA3'],
+                               mut_levels=[['Gene']], mut_genes=['GATA3'],
                                cv_seed=101, test_prop=0.3)
     test_mtype = MuType({('Gene', 'GATA3'): None})
 

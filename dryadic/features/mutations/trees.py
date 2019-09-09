@@ -8,6 +8,7 @@ import os
 
 from functools import reduce
 from itertools import combinations as combn
+from itertools import product
 from operator import or_
 from re import sub as gsub
 
@@ -947,4 +948,21 @@ class MuTree(object):
             samp_list = mtype.get_samples(self)
 
         return [s in samp_list for s in samples]
+
+    def match_levels(self, mtype):
+        if self.mut_level == mtype.cur_level:
+            mtype_mtch = all(
+                False if isinstance(muts, frozenset)
+                else muts.match_levels(tp)
+                for (nm, muts), (lbl, tp) in product(self,
+                                                     mtype.subtype_list())
+                if tp is not None and (nm == lbl or lbl not in self._child)
+                )
+
+        else:
+            mtype_mtch = any(muts.match_levels(mtype)
+                             for muts in self._child.values()
+                             if not isinstance(muts, frozenset))
+
+        return mtype_mtch
 
