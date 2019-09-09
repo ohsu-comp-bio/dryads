@@ -151,25 +151,37 @@ class MuType(object):
             else:
                 self._child[lbls] = sub_type
 
+    def __getstate__(self):
+        state_dict = dict()
+
+        for lbls, tp in self._child.items():
+            lbls_key = self.cur_level, tuple(sorted(lbls))
+
+            if tp is None:
+                state_dict[lbls_key] = None
+            else:
+                state_dict[lbls_key] = tp.__getstate__()
+
+        return state_dict
+
+    def __setstate__(self, state):
+        self.__init__(state)
+
     def is_empty(self):
         """Checks if this MuType corresponds to the null mutation set."""
         return self._child == {}
 
-    def get_levels(self):
-        """Gets the property levels present in this type and its subtypes."""
-        levels = {self.cur_level}
-
-        for tp in self._child.values():
-            if isinstance(tp, MuType):
-                levels |= set(tp.get_levels())
-
-        return levels
+    def get_levels_tree(self):
+        return (self.cur_level, ) + tuple({
+            tp.get_levels_tree() for tp in self._child.values()
+            if tp is not None
+            })
 
     def get_sorted_levels(self):
         child_levels = set()
 
         for tp in self._child.values():
-            if isinstance(tp, MuType):
+            if tp is not None:
                 child_levels |= {tp.get_sorted_levels()}
 
         if child_levels:
@@ -180,6 +192,16 @@ class MuType(object):
             sorted_levels = self.cur_level,
 
         return sorted_levels
+
+    def get_levels(self):
+        """Gets the property levels present in this type and its subtypes."""
+        levels = {self.cur_level}
+
+        for tp in self._child.values():
+            if tp is not None:
+                levels |= set(tp.get_levels())
+
+        return levels
 
     def __hash__(self):
         """MuType hashes are defined in an analagous fashion to those of
@@ -202,6 +224,9 @@ class MuType(object):
     def subtype_list(self):
         """Returns the list of all unique label:subtype pairs."""
         return [(lbl, tp) for lbls, tp in self._child.items() for lbl in lbls]
+
+    def get_labels(self):
+        return [lbl for lbls in self._child for lbl in lbls]
 
     def __len__(self):
         """Returns the number of unique category labels in the MuType.
@@ -618,7 +643,7 @@ class MuType(object):
            exactly one of the leaf properties."""
         mkeys = []
 
-        for lbls, tp in list(self.child_iter()):
+        for lbls, tp in self._child.items():
             if tp is None:
                 mkeys += [{(self.cur_level, lbl): None} for lbl in lbls]
 

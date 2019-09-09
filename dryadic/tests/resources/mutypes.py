@@ -28,6 +28,8 @@ synonyms = (
     MuType({('Gene', 'TP53'): {('Form', 'Frame'): None},
             ('Gene', 'KRAS'): {('Form', 'Frame'): None},
             ('Gene', ('TP53', 'KRAS')): {('Form', 'Point'): None}}),
+    MuType({('Gene', ('TP53', 'KRAS', 'BRAF')): None}),
+    MuType({('Gene', ('BRAF', 'TP53', 'KRAS')): None}),
     )
 
 # .. subtypes present in the ./mut_objs/muts_small.p set

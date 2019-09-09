@@ -22,7 +22,7 @@ class TestCaseInit(object):
     """Tests for proper instatiation of MuTypes from type dictionaries."""
 
     params = {'test_child': 'basic', 'test_levels': 'basic',
-              'test_synonyms': 'synonyms'}
+              'test_synonyms': 'synonyms', 'test_state': 'ALL'}
 
     def test_child(self, mtypes):
         """Is the child attribute of a MuType properly created?"""
@@ -62,6 +62,10 @@ class TestCaseInit(object):
         for mtype1, mtype2 in zip(mtypes[0::2], mtypes[1::2]):
             assert mtype1._child == mtype2._child
 
+    def test_state(self, mtypes):
+        for mtype in mtypes:
+            assert mtype == MuType(mtype.__getstate__())
+
 
 class TestCaseBasic:
     """Tests for basic functionality of MuTypes."""
@@ -75,7 +79,7 @@ class TestCaseBasic:
 
     def test_equality(self, mtypes):
         for mtype1, mtype2 in product(mtypes, repeat=2):
-            if mtype1._child == mtype2._child:
+            if (mtype1._child == mtype2._child):
                 assert mtype1 == mtype2
 
     def test_print(self, mtypes):
@@ -124,7 +128,7 @@ class TestCaseIter:
 
     def test_len(self, mtypes):
         assert ([len(mtype) for mtype in mtypes]
-                == [1, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2])
+                == [1, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3])
 
 
 class TestCaseSorting:
@@ -175,7 +179,6 @@ class TestCaseBinary:
             assert mtype >= mtype
             assert not mtype < mtype
             assert not mtype > mtype
-
 
         for mtype1, mtype2 in combn(mtypes, 2):
             assert (mtype1 <= mtype2) != (mtype1 > mtype2)
