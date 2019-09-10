@@ -8,7 +8,7 @@ phenotypic information from -omic datasets.
 """
 
 from ..utilities.cross_validation import (
-    OmicRandomizedCV, cross_val_predict_omic, OmicShuffleSplit)
+    cross_val_predict_omic, OmicShuffleSplit)
 
 import numpy as np
 from numbers import Number
@@ -19,7 +19,7 @@ from copy import copy
 from inspect import getargspec
 
 from sklearn.pipeline import Pipeline
-from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import cross_val_score, RandomizedSearchCV
 from sklearn.metrics import roc_auc_score
 from scipy.stats import pearsonr
 
@@ -235,7 +235,7 @@ class OmicPipe(Pipeline):
                 )
 
             # samples parameter combinations and tests each one
-            grid_test = OmicRandomizedCV(
+            grid_test = RandomizedSearchCV(
                 estimator=self, param_distributions=self.cur_tuning,
                 n_iter=test_count, cv=tune_cvs, refit=False,
                 n_jobs=parallel_jobs, pre_dispatch='n_jobs'
