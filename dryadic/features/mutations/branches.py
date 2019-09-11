@@ -609,22 +609,75 @@ class MuType(object):
             for (nm, mut), (lbl, tp) in product(mtree, self.subtype_list()):
                 if lbl == nm:
 
-                    if isinstance(mut, frozenset):
-                            samps |= mut
-
-                    else:
+                    if hasattr(mut, 'get_samples'):
                         if tp is None:
                             samps |= mut.get_samples()
                         else:
                             samps |= tp.get_samples(mut)
 
+                    elif isinstance(mut, dict):
+                            samps |= set(mut)
+
+                    else:
+                        raise ValueError
+
         else:
             for _, mut in mtree:
-                if (not isinstance(mut, frozenset)
+                if (hasattr(mut, 'get_levels')
                         and mut.get_levels() & self.get_levels()):
                     samps |= self.get_samples(mut)
 
         return samps
+
+    def get_leaf_annot(self, mtree, ant_flds):
+        ant_dict = dict()
+
+        if self.cur_level == mtree.mut_level:
+            for (nm, mut), (lbl, tp) in product(mtree, self.subtype_list()):
+                if lbl == nm:
+
+                    if hasattr(mut, 'get_samples'):
+                        if tp is None:
+                            lf_ant = mut.get_leaf_annot(ant_flds)
+                        else:
+                            lf_ant = tp.get_leaf_annot(mut, ant_flds)
+
+                    elif isinstance(mut, dict):
+                        lf_ant = {samp: {fld: ant[fld] for fld in ant_flds}
+                                  for samp, ant in mut.items()}
+
+                    else:
+                        raise ValueError
+
+                    ant_dict = {
+                        **{samp: lf_ant[samp]
+                           for samp in lf_ant.keys() - ant_dict.keys()},
+                        **{samp: ant_dict[samp]
+                           for samp in ant_dict.keys() - lf_ant.keys()},
+                        **{samp: {ant_fld: (ant_dict[samp][ant_fld]
+                                            + lf_ant[samp][ant_fld])
+                                  for ant_fld in ant_flds}
+                           for samp in ant_dict.keys() & lf_ant.keys()}
+                        }
+
+        else:
+            for _, mut in mtree:
+                if (hasattr(mut, 'get_levels')
+                        and mut.get_levels() & self.get_levels()):
+                    lf_ant = self.get_leaf_annot(mut, ant_flds)
+
+                    ant_dict = {
+                        **{samp: lf_ant[samp]
+                           for samp in lf_ant.keys() - ant_dict.keys()},
+                        **{samp: ant_dict[samp]
+                           for samp in ant_dict.keys() - lf_ant.keys()},
+                        **{samp: {ant_fld: (ant_dict[samp][ant_fld]
+                                            + lf_ant[samp][ant_fld])
+                                  for ant_fld in ant_flds}
+                           for samp in ant_dict.keys() & lf_ant.keys()}
+                        }
+
+        return ant_dict
 
     def invert(self, mtree):
         """Gets the MuType of mutations in a MuTree but not in this MuType.

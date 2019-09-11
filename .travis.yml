@@ -4,16 +4,13 @@ os: linux
 
 install:
         - sudo apt-get update
-        - wget \
-          https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh \
-          -O miniconda.sh
+        - wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
         - bash miniconda.sh -b -p $HOME/miniconda
         - export PATH="$HOME/miniconda/bin:$PATH"
         - hash -r
         - conda config --set always_yes yes --set changeps1 no
         - conda update -q conda
-        - conda create -n testenv python=3.6 pytest numpy=1.16 pandas=0.25 \
-          scikit-learn=0.21 pystan=2.19
+        - conda create -n testenv python=3.6 pytest numpy=1.16 pandas=0.25 scikit-learn=0.21 pystan=2.19
         - source activate testenv
 
 script:
