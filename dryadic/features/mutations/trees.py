@@ -271,7 +271,7 @@ class MuTree(object):
         loc_tbl.loc[none_indx, 1] = muts['Protein'][none_indx]
 
         for loc, grp in loc_tbl.groupby(by=1):
-            new_muts[loc] = muts.ix[grp.index, :]
+            new_muts[loc] = muts.loc[grp.index, :]
 
         return new_muts
 
@@ -415,11 +415,15 @@ class MuTree(object):
 
         # ...otherwise, return a set of samples as a leaf node
         else:
-            return frozenset(muts['Sample'])
+            return {samp: ({fld: group[fld].tolist()
+                            for fld in kwargs['leaf_annot']}
+                           if 'leaf_annot' in kwargs else None)
+                    for samp, group in muts.groupby('Sample')}
 
     def __init__(self, muts, levels=('Gene', 'Form'), **kwargs):
         if 'depth' in kwargs:
             self.depth = kwargs['depth']
+            del(kwargs['depth'])
 
         else:
             self.depth = 0
@@ -460,8 +464,11 @@ class MuTree(object):
 
                 # ...or a mixture of further MuTrees and leaf nodes
                 else:
-                    self._child = {nm: MuTree(mut, lvls_left, **kwargs)
-                                   for nm, mut in splat_muts.items()}
+                    self._child = {
+                        nm: MuTree(mut, lvls_left, depth=self.depth + 1,
+                                   **kwargs)
+                        for nm, mut in splat_muts.items()
+                        }
 
             # if the mutations cannot be split at this level, move on to the
             # next level and keep track of how many levels we have skipped
@@ -472,10 +479,7 @@ class MuTree(object):
         """Allows iteration over mutation categories at the current level, or
            the samples at the current level if we are at a leaf node."""
 
-        if isinstance(self._child, frozenset):
-            return iter(self._child)
-        else:
-            return iter(self._child.items())
+        return iter(self._child.items())
 
     def __getitem__(self, key):
         """Gets a particular category of mutations at the current level."""
@@ -497,7 +501,7 @@ class MuTree(object):
                 key_item = sub_item
 
         else:
-            raise TypeError("Unsupported key type " + type(key) + "!")
+            raise TypeError("Unsupported key type {} !".format(type(key)))
 
         return key_item
 
@@ -591,12 +595,36 @@ class MuTree(object):
         for nm, mut in self:
             if isinstance(mut, MuTree):
                 samps |= mut.get_samples()
-            elif isinstance(mut, frozenset):
-                samps |= mut
+            elif isinstance(mut, dict):
+                samps |= set(mut)
             else:
-                samps |= {nm}
+                raise ValueError
 
         return samps
+
+    def get_leaf_annot(self, ant_flds):
+        ant_dict = dict()
+
+        for nm, mut in self:
+            if isinstance(mut, MuTree):
+                lf_ant = mut.get_leaf_annot(ant_flds)
+            elif isinstance(mut, dict):
+                lf_ant = {samp: {fld: ant[fld] for fld in ant_flds}
+                          for samp, ant in mut.items()}
+
+            else:
+                raise ValueError
+
+            ant_dict = {**{samp: lf_ant[samp]
+                           for samp in lf_ant.keys() - ant_dict.keys()},
+                        **{samp: ant_dict[samp]
+                           for samp in ant_dict.keys() - lf_ant.keys()},
+                        **{samp: {ant_fld: (ant_dict[samp][ant_fld]
+                                            + lf_ant[samp][ant_fld])
+                                  for ant_fld in ant_flds}
+                           for samp in ant_dict.keys() & lf_ant.keys()}}
+
+        return ant_dict
 
     def subtree(self, samps):
         """Modifies the MuTree in place so that it only has the given samples.
@@ -952,7 +980,7 @@ class MuTree(object):
     def match_levels(self, mtype):
         if self.mut_level == mtype.cur_level:
             mtype_mtch = all(
-                False if isinstance(muts, frozenset)
+                False if not isinstance(muts, MuTree)
                 else muts.match_levels(tp)
                 for (nm, muts), (lbl, tp) in product(self,
                                                      mtype.subtype_list())
@@ -962,7 +990,7 @@ class MuTree(object):
         else:
             mtype_mtch = any(muts.match_levels(mtype)
                              for muts in self._child.values()
-                             if not isinstance(muts, frozenset))
+                             if isinstance(muts, MuTree))
 
         return mtype_mtch
 

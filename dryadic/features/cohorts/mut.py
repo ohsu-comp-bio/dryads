@@ -22,13 +22,15 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
 
     def __init__(self,
                  expr_mat, mut_df, mut_levels=None, mut_genes=None,
-                 domain_dir=None, cv_seed=None, test_prop=0):
+                 domain_dir=None, leaf_annot=('PolyPhen', ),
+                 cv_seed=None, test_prop=0):
         if mut_genes is not None:
             mut_df = mut_df.loc[mut_df.Gene.isin(mut_genes)]
 
         self.mut_genes = mut_genes
         self.muts = mut_df
         self.domain_dir = domain_dir
+        self.leaf_annot = leaf_annot
         self.mtrees = dict()
 
         if mut_levels is None:
@@ -42,7 +44,8 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
 
     def add_mut_lvls(self, lvls):
         self.mtrees[tuple(lvls)] = MuTree(self.muts, levels=lvls,
-                                          domain_dir=self.domain_dir)
+                                          domain_dir=self.domain_dir,
+                                          leaf_annot=self.leaf_annot)
 
     def choose_mtree(self, pheno):
         if isinstance(pheno, MuType):
@@ -64,9 +67,7 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
                     mtree_lvls = phn_lvls
 
         elif isinstance(pheno, MutComb):
-            for mtype in pheno.mtypes:
-                mtree_lvls = [self.choose_mtree(mtype)
-                              for mtype in pheno.mtypes]
+            mtree_lvls = self.choose_mtree(list(pheno.mtypes)[0])
 
         return mtree_lvls
 
@@ -185,7 +186,7 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
         return stat_list
 
     def data_hash(self):
-        return super().data_hash(), hash(self.mtree)
+        return super().data_hash(), hash(tuple(sorted(self.mtrees.items())))
 
 
 class BaseCopyCohort(ValueCohort, UniCohort):
