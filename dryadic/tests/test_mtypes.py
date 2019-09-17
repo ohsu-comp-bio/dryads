@@ -9,13 +9,63 @@ Author: Michal Grzadkowski <grzadkow@ohsu.edu>
 """
 
 from ..features.mutations import MuType
-from .utilities import pytest_generate_tests
+from .resources import mutypes
 import pytest
 
 from functools import reduce
-from operator import or_, and_
+from operator import or_, and_, add
 from itertools import combinations as combn
 from itertools import product
+
+
+def pytest_generate_tests(metafunc):
+    if metafunc.function.__code__.co_argcount == 1:
+        pass
+
+    elif metafunc.function.__code__.co_argcount == 2:
+        if hasattr(metafunc.cls, 'params'):
+            if isinstance(metafunc.cls.params, dict):
+                funcarglist = metafunc.cls.params[metafunc.function.__name__]
+
+            else:
+                funcarglist = metafunc.cls.params
+
+        else:
+            funcarglist = 'ALL'
+
+        if isinstance(funcarglist, str):
+            funcarglist = [funcarglist]
+
+        if metafunc.function.__code__.co_varnames[1] == 'mtypes':
+            metafunc.parametrize(
+                'mtypes', [mtype_tester(funcarg) for funcarg in funcarglist],
+                ids=[funcarg.replace('_', '+') for funcarg in funcarglist]
+                )
+
+        else:
+            raise ValueError("Unrecognized singleton argument "
+                             "to unit test `{}` !".format(
+                                 metafunc.function.__code__.co_varnames[1]))
+
+    else:
+        raise ValueError("MuType unit tests take at most one argument!")
+
+
+def mtype_tester(mtypes_param):
+    if mtypes_param == 'ALL':
+        mtypes = reduce(
+            add, [tps for _, tps in vars(mutypes).items()
+                  if isinstance(tps, tuple) and isinstance(tps[0], MuType)]
+            )
+
+    elif '_' in mtypes_param:
+        mtypes = reduce(add, [eval('mutypes.{}'.format(mtypes))
+                              for mtypes in mtypes_param.split('_')])
+
+    else:
+        mtypes = eval('mutypes.{}'.format(mtypes_param))
+
+    return mtypes
 
 
 class TestCaseInit(object):
@@ -221,16 +271,14 @@ class TestCaseBinary:
 
     def test_or_easy(self, mtypes):
         """Can we take the union of two simple MuTypes?"""
-        assert (mtypes[0] | mtypes[1]) == mtypes[0]
-        assert (mtypes[0] | mtypes[4]) == mtypes[4]
+        assert (mtypes[6] | mtypes[7]) == mtypes[7]
+        assert (mtypes[0] | mtypes[5]) == mtypes[5]
 
-        or_mtype = MuType({
-            ('Gene', 'CDH1'): None,
-            ('Gene', 'TTN'): {
-                ('Form', 'Missense_Mutation'): {
-                    ('Exon', ('326/363', '302/363', '10/363')): None
-                    }}})
-        assert (mtypes[1] | mtypes[2]) == or_mtype
+        assert (mtypes[8] | mtypes[4]) == MuType({
+            ('Form', ('Frame_Shift', 'In_Frame_Del')): None,
+            ('Form', 'Missense_Mutation'): {
+                ('Exon', ('8/21', '5/21')): None}
+            })
 
     def test_or_hard(self, mtypes):
         """Can we take the union of two tricky MuTypes?"""
@@ -239,15 +287,13 @@ class TestCaseBinary:
 
     def test_and(self, mtypes):
         """Can we take the intersection of two MuTypes?"""
-        assert (mtypes[0] & mtypes[1]) == mtypes[1]
-        assert (mtypes[0] & mtypes[4]) == mtypes[0]
+        assert (mtypes[0] & mtypes[3]) == mtypes[3]
+        assert (mtypes[2] & mtypes[9]) == MuType({})
+        assert (mtypes[6] & mtypes[7]) == mtypes[6]
 
-        and_mtype = MuType({
-            ('Gene', 'TTN'): {
-                ('Form', 'Missense_Mutation'): {
-                    ('Exon', '10/363'): None
-                    }}})
-        assert (mtypes[1] & mtypes[2]) == and_mtype
+        assert ((mtypes[4] & MuType({('Form', 'Missense_Mutation'): None}))
+                == MuType({('Form', 'Missense_Mutation'): {
+                    ('Exon', ('8/21', '5/21')): None}}))
 
     def test_sub(self, mtypes):
         """Can we subtract one MuType from another?"""

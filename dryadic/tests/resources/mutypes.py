@@ -32,16 +32,21 @@ synonyms = (
     MuType({('Gene', ('BRAF', 'TP53', 'KRAS')): None}),
     )
 
-# .. subtypes present in the ./mut_objs/muts_small.p set
+# .. subtypes present in the ./muts_small.tsv set
 small = (
-    MuType({('Gene', 'TTN'): None}),
-    MuType({('Gene', 'TTN'): {('Form', 'Missense_Mutation'): {
-                ('Exon', ('326/363', '10/363')): None}}}),
-    MuType({('Gene', 'CDH1'): None,
-            ('Gene', 'TTN'): {('Form', 'Missense_Mutation'): {
-                ('Exon', ('302/363', '10/363')): None}}}),
-    MuType({('Form', 'Silent'): None}),
-    MuType({('Gene', ('CDH1', 'TTN')): None})
+    MuType({('Gene', 'PIK3CA'): None}),
+    MuType({('Form', 'Missense_Mutation'): None}),
+    MuType({('Exon', '8/21'): None}),
+    MuType({('Gene', 'PIK3CA'): {('Form', 'Missense_Mutation'): {
+        ('Exon', ('10/21', '2/21')): None}}}),
+    MuType({('Form', 'In_Frame_Del'): None,
+            ('Form', 'Missense_Mutation'): {
+                ('Exon', ('8/21', '5/21')): None}}),
+    MuType({('Gene', ('PIK3CA', 'TTN')): None}),
+    MuType({('Gene', 'TP53'): None}),
+    MuType({('Gene', ('TP53', 'KRAS', 'BRAF')): None}),
+    MuType({('Form', 'Frame_Shift'): None}),
+    MuType({('Exon', '1/21'): None}),
     )
 
 # .. subtypes which should never return any samples
@@ -65,13 +70,6 @@ synonym = (
                     ('Protein', 'p55H'): None},
                 ('Form', 'Splice'): {('Protein', 'p43T'): None}
                 }}),
-    )
-
-# .. subtypes unique to mutations in the TP53 gene
-tp53 = (
-    MuType({('Form', 'Splice_Site'): None}),
-    MuType({('Exon', ('7/11', '8/11')): None}),
-    MuType({('Protein', ('p.R158L', '.')): None}),
     )
 
 # .. subtypes designed for use in testing binary operations
