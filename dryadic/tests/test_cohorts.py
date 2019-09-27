@@ -60,7 +60,7 @@ def main():
     mut_data = load_omic_data('variants')
     cdata = BaseMutationCohort(
         expr_data, mut_data,
-        mut_levels=[['Form', 'Exon'], ['Exon', 'Form_base']],
+        mut_levels=[['Form', 'Exon', 'Location'], ['Exon', 'Form_base']],
         mut_genes=['TP53'], cv_seed=139, test_prop=0.2
         )
 
@@ -69,13 +69,7 @@ def main():
     check_samp_split(cdata, expr_data.index)
     assert len(cdata.mtrees) == 2
     assert (cdata.muts.Gene == 'TP53').all()
-
-    for exn, mut_df in mut_data[mut_data.Gene == 'TP53'].groupby('Exon'):
-        assert (
-            set(cdata.mtrees['Exon', 'Form_base'][exn].get_samples())
-            == set(mut_data.Sample[(mut_data.Gene == 'TP53')
-                                   & (mut_data.Exon == exn)])
-            )
+    assert cdata.data_hash() == cdata.data_hash()
 
     for exn1, exn2 in combn(set(mut_data.Exon[mut_data.Gene == 'TP53']), 2):
         mtype = MuType({('Exon', (exn1, exn2)): None})
@@ -97,18 +91,23 @@ def main():
         test_mut_smps = np.array(cdata.get_test_samples())[test_phn]
         assert (set(train_mut_smps) & set(test_mut_smps)) == set()
 
+        use_muts = mut_data.loc[(mut_data.Gene == 'TP53')
+                                & mut_data.Exon.isin([exn1, exn2])]
         assert (sorted((set(train_mut_smps) | set(test_mut_smps)))
-                == sorted(set(mut_data.Sample[
-                    (mut_data.Gene == 'TP53')
-                    & mut_data.Exon.isin([exn1, exn2])
-                    ])))
+                == sorted(set(use_muts.Sample)))
+
+        for samp, lf_ant in mtype.get_leaf_annot(
+                cdata.mtrees['Exon', 'Form_base'], ['PolyPhen']).items():
+            assert (set(lf_ant['PolyPhen'])
+                    == set(use_muts.loc[use_muts.Sample
+                                        == samp].PolyPhen.tolist()))
 
     cdata = BaseMutationCohort(
         expr_data, mut_data, mut_levels=[['Domain_Pfam', 'Exon']],
         mut_genes=['TP53'], domain_dir=data_dir, test_prop=0, cv_seed=7753
         )
 
-    assert (len(cdata.mtrees['Domain_Pfam', 'Exon']['None'].get_samples())
+    assert (len(cdata.mtrees['Domain_Pfam', 'Exon']['none'].get_samples())
             == 2), ("Exactly two samples should have mutations "
                     "not overlapping a Pfam domain!")
 
@@ -118,7 +117,7 @@ def main():
 
     assert (cdata.mutex_test(
         MuType({('Domain_Pfam', 'PF00870'): None}),
-        MuType({('Domain_Pfam', 'None'): None}))) == (0, 1)
+        MuType({('Domain_Pfam', 'none'): None}))) == (0, 1)
     assert len(cdata.mtrees) == 1
 
     print("All Cohort tests passed successfully!")

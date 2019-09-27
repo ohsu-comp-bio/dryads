@@ -256,7 +256,7 @@ class MuTree(object):
                                                  muts.loc[domain_indx, :]])
 
         if none_indx.any():
-            new_muts['None'] = muts.loc[none_indx.tolist(), :]
+            new_muts['none'] = muts.loc[none_indx.tolist(), :]
 
         return {dom: v for dom, v in new_muts.items() if v.shape[0]}
 
@@ -417,7 +417,8 @@ class MuTree(object):
         else:
             return {samp: ({fld: group[fld].tolist()
                             for fld in kwargs['leaf_annot']}
-                           if 'leaf_annot' in kwargs else None)
+                           if 'leaf_annot' in kwargs and kwargs['leaf_annot']
+                           else None)
                     for samp, group in muts.groupby('Sample')}
 
     def __init__(self, muts, levels=('Gene', 'Form'), **kwargs):

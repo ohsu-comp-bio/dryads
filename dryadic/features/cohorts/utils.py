@@ -96,6 +96,9 @@ def get_gencode(annot_file, include_types=None):
     if include_types:
         use_types |= set(include_types)
 
+    if 'exon' in include_types:
+        use_types |= {'UTR'}
+
     # remove annotation records that are non-relevant or on sex chromosomes
     chroms_use = {'chr' + str(i+1) for i in range(22)}
     annot = annot.loc[annot['Type'].isin(use_types)
@@ -148,38 +151,31 @@ def get_gencode(annot_file, include_types=None):
                 }
 
     if 'exon' in use_types:
+        if 'transcript' not in use_types:
+            raise ValueError("Cannot load gene exon information without also "
+                             "loading transcript information!")
+
         # likewise, group exon records according to parent gene
-        exn_groups = info_df[info_df.Type.isin(['exon', 'UTR'])
-                             & info_df.gene_id.isin(gene_df.index)].groupby(
-                                 ['gene_id'])
+        regn_groups = info_df[info_df.Type.isin(['exon', 'UTR'])
+                              & info_df.gene_id.isin(gene_df.index)].groupby(
+                                  ['gene_id', 'transcript_id'])
 
-        # insert the exons for each gene into the gene dictionary, using the first
-        # transcript of each gene as the genomic reference
-        for gn, exn_df in exn_groups:
-            use_tx = '{}-001'.format(gn_annot[gn]['gene_name'])
-            use_exns = exn_df[exn_df.transcript_name == use_tx].sort_values(
-                by=['Start', 'Type'], ascending=[True, False])
+        for (gn, tx), regn_df in regn_groups:
+            exn_df = regn_df[regn_df.Type == 'exon']
+            utr_df = regn_df[regn_df.Type == 'UTR']
 
-            use_exns = use_exns.reset_index(drop=True)
-            gn_annot[gn]['Exons'] = use_exns[
-                use_exns.Type == 'exon'].sort_values(by='exon_number')[
-                    ['Start', 'End', 'exon_id']].apply(dict, axis=1).tolist()
+            gn_annot[gn]['Transcripts'][tx]['Exons'] = exn_df.sort_values(
+                by='exon_number')[['Start', 'End', 'exon_id']].apply(
+                    dict, axis=1).tolist()
+            exn_count = len(gn_annot[gn]['Transcripts'][tx]['Exons'])
 
-            for i in range(use_exns.shape[0]):
-                if use_exns['Type'][i] == 'UTR':
-                    utr_exn = int(use_exns['exon_number'][cur_exon]) - 1
+            for i in range(len(gn_annot[gn]['Transcripts'][tx]['Exons'])):
+                gn_annot[gn]['Transcripts'][tx]['Exons'][i][
+                    'number'] = "{}/{}".format(i + 1, exn_count)
 
-                    if 'UTR' in gn_annot[gn]['Exons'][utr_exn]:
-                        gn_annot[gn]['Exons'][utr_exn]['UTR'] += [use_exns[
-                            ['Start', 'End']].iloc[i].to_dict()]
-
-                    else:
-                        gn_annot[gn]['Exons'][utr_exn]['UTR'] = [use_exns[
-                            ['Start', 'End']].iloc[i].to_dict()]
-
-                else:
-                    cur_exon = i
-
+            gn_annot[gn]['Transcripts'][tx]['UTRs'] = utr_df.sort_values(
+                by='Start')[['Start', 'End']].apply(dict, axis=1).tolist()
+ 
     return gn_annot
 
 
