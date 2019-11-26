@@ -103,7 +103,10 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
             stat_list = self.cna_pheno(pheno, samps)
 
         elif isinstance(tuple(pheno)[0], MuType):
-            stat_list = [self.mtree.status(samps, phn) for phn in pheno]
+            stat_list = [
+                self.mtrees[self.choose_mtree(phn)].status(samps, phn)
+                for phn in pheno
+                ]
 
         elif isinstance(tuple(pheno)[0], dict):
             stat_list = [self.cna_pheno(phn, samps) for phn in pheno]
@@ -147,7 +150,10 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
             stat_list = self.cna_pheno(pheno, samps)
 
         elif isinstance(tuple(pheno)[0], MuType):
-            stat_list = [self.mtree.status(samps, phn) for phn in pheno]
+            stat_list = [
+                self.mtrees[self.choose_mtree(phn)].status(samps, phn)
+                for phn in pheno
+                ]
 
         elif isinstance(tuple(pheno)[0], dict):
             stat_list = [self.cna_pheno(phn, samps) for phn in pheno]
@@ -289,18 +295,62 @@ class BaseTransferMutationCohort(PresenceCohort, TransferCohort):
 
     def __init__(self,
                  expr_dict, mut_dict, mut_levels, mut_genes=None,
-                 domain_dir=None, cv_seed=None, test_prop=0):
+                 domain_dir=None, leaf_annot=('PolyPhen', ),
+                 cv_seed=None, test_prop=0):
 
         if mut_genes is None:
             mut_dict = {coh: mut_df.loc[mut_df.Gene.isin(mut_genes)]
                         for coh, mut_df in mut_dict.items()}
 
         self.mut_genes = mut_genes
-        self.mtree_dict = {coh: MuTree(mut_dict[coh], levels=mut_levels,
-                                       domain_dir=domain_dir)
-                           for coh in expr_dict}
+        self.muts = mut_dict
+        self.domain_dir = domain_dir
+        self.leaf_annot = leaf_annot
+        self.mtrees_dict = dict()
+
+        if mut_levels is None:
+            self.add_mut_lvls(('Gene', ))
+
+        else:
+            for lvls in mut_levels:
+                self.add_mut_lvls(lvls)
 
         super().__init__(expr_dict, cv_seed, test_prop)
+
+    def add_mut_lvls(self, lvls):
+        for lvl_k in lvls:
+            if tuple(lvl_k) not in self.mtrees_dict:
+                self.mtrees_dict[tuple(lvl_k)] = dict()
+
+            for coh, muts in self.muts.items():
+                self.mtrees_dict[tuple(lvl_k)][coh] = MuTree(
+                    muts, levels=lvls,
+                    domain_dir=self.domain_dir, leaf_annot=self.leaf_annot
+                    )
+
+    def choose_mtree(self, pheno, coh):
+        if isinstance(pheno, MuType):
+            phn_lvls = pheno.get_sorted_levels()
+
+            if not phn_lvls:
+                mtree_lvls = tuple(self.mtrees_dict)[0]
+            elif phn_lvls in self.mtrees_dict:
+                mtree_lvls = phn_lvls
+
+            else:
+                for mut_lvls, mtrees in self.mtrees_dict.items():
+                    if mtrees[coh].match_levels(pheno):
+                        mtree_lvls = mut_lvls
+                        break
+
+                else:
+                    self.add_mut_lvls(phn_lvls)
+                    mtree_lvls = phn_lvls
+
+        elif isinstance(pheno, MutComb):
+            mtree_lvls = self.choose_mtree(list(pheno.mtypes)[0], coh)
+
+        return mtree_lvls
 
     @classmethod
     def combine_cohorts(cls, *cohorts, **named_cohorts):
@@ -339,13 +389,21 @@ class BaseTransferMutationCohort(PresenceCohort, TransferCohort):
                      for coh in self._omic_data}
  
         if isinstance(pheno, MuType) or isinstance(pheno, MutComb):
-            stat_dict = {coh: self.mtree_dict[coh].status(samps[coh], pheno)
-                         for coh in self._omic_data}
+            stat_dict = {
+                coh: self.mtrees_dict[self.choose_mtree(pheno, coh)][
+                    coh].status(samps[coh], pheno)
+                for coh in self._omic_data
+                }
 
         elif isinstance(tuple(pheno)[0], MuType):
-            stat_dict = {coh: [self.mtree_dict[coh].status(samps[coh], phn)
-                               for phn in pheno]
-                         for coh in self._omic_data}
+            stat_dict = {
+                coh: [
+                    self.mtrees_dict[self.choose_mtree(phn, coh)][
+                        coh].status(samps[coh], phn)
+                    for phn in pheno
+                    ]
+                for coh in self._omic_data
+                }
 
         else:
             raise TypeError(
@@ -382,13 +440,21 @@ class BaseTransferMutationCohort(PresenceCohort, TransferCohort):
                      for coh in self._omic_data}
  
         if isinstance(pheno, MuType) or isinstance(pheno, MutComb):
-            stat_dict = {coh: self.mtree_dict[coh].status(samps[coh], pheno)
-                         for coh in self._omic_data}
+            stat_dict = {
+                coh: self.mtrees_dict[coh][
+                    self.choose_mtree(pheno, coh)].status(samps[coh], pheno)
+                for coh in self._omic_data
+                }
 
         elif isinstance(tuple(pheno)[0], MuType):
-            stat_dict = {coh: [self.mtree_dict[coh].status(samps[coh], phn)
-                               for phn in pheno]
-                         for coh in self._omic_data}
+            stat_dict = {
+                coh: [
+                    self.mtrees_dict[coh][
+                        self.choose_mtree(phn, coh)].status(samps[coh], phn)
+                    for phn in pheno
+                    ]
+                for coh in self._omic_data
+                }
 
         else:
             raise TypeError(

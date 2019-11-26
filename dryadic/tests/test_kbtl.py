@@ -75,9 +75,10 @@ def main():
     mult_mtypes = [MuType({('Gene', 'TP53'): None}),
                    MuType({('Gene', 'GATA3'): None})]
 
-    uni_cdata = BaseMutationCohort(expr_data, mut_data, mut_levels=['Gene'],
+    uni_cdata = BaseMutationCohort(expr_data, mut_data, mut_levels=[['Gene']],
                                    mut_genes=['TP53', 'GATA3'],
-                                   cv_seed=101, test_prop=0.3)
+                                   cv_seed=None, test_prop=0.3)
+    uni_cdata.update_split(new_seed=101)
 
     sing_clf.tune_coh(uni_cdata, mult_mtypes,
                       test_count=4, tune_splits=2, parallel_jobs=1)
@@ -99,10 +100,12 @@ def main():
         )
 
     trs_cdata = BaseTransferMutationCohort(expr_dict, mut_dict,
-                                           mut_levels=['Gene'],
+                                           mut_levels=[['Gene']],
                                            mut_genes=['TP53', 'GATA3'],
-                                           cv_seed=101, test_prop=0.3)
+                                           cv_seed=None, test_prop=0.3)
+    trs_cdata.update_split(new_seed=101)
 
+    import pdb; pdb.set_trace()
     mult_clf.tune_coh(trs_cdata, sing_mtype,
                       test_count=4, tune_splits=2, parallel_jobs=1)
     print(mult_clf)

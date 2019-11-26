@@ -313,7 +313,7 @@ class OmicPipe(Pipeline):
         return self.score(test_omics, test_pheno)
 
     def infer_coh(self,
-                  cohort, pheno, force_test_samps=None,
+                  cohort, pheno, force_test_samps=None, lbl_type='raw',
                   infer_splits=16, infer_folds=4, parallel_jobs=8,
                   include_samps=None, exclude_samps=None,
                   include_feats=None, exclude_feats=None):
@@ -326,7 +326,7 @@ class OmicPipe(Pipeline):
 
         return cross_val_predict_omic(
             estimator=self, X=train_omics, y=train_pheno,
-            force_test_samps=force_test_samps,
+            force_test_samps=force_test_samps, lbl_type=lbl_type,
             cv_fold=infer_folds, cv_count=infer_splits, n_jobs=parallel_jobs,
             fit_params=self.extra_fit_params(cohort),
             random_state=int(cohort.get_seed() ** 1.5) % 42949672,
@@ -381,8 +381,15 @@ class PresencePipe(OmicPipe):
 
         return new_preds
 
-    def predict_omic(self, omic_data):
-        return self.predict_proba(omic_data)
+    def predict_omic(self, omic_data, lbl_type='prob'):
+        if lbl_type == 'prob':
+            return self.predict_proba(omic_data)
+        elif lbl_type == 'raw':
+            return self.calc_pred_labels(omic_data)
+
+        else:
+            raise ValueError(
+                "Unrecognized type of label `{}` !".format(lbl_type))
 
     @staticmethod
     def score_pheno(actual_pheno, pred_pheno):

@@ -90,8 +90,8 @@ class Lasso(Base, LinearPipe):
         ('fit__C', tuple(10 ** np.linspace(-3.1, 6.1, 185))),
         )
 
-    fit_inst = LogisticRegression(penalty='l1', max_iter=200,
-                                  class_weight='balanced')
+    fit_inst = LogisticRegression(solver='liblinear', penalty='l1',
+                                  max_iter=200, class_weight='balanced')
 
 
 class Ridge(Base, LinearPipe):
@@ -110,7 +110,8 @@ class Ridge(Base, LinearPipe):
         ('fit__C', tuple(10 ** np.linspace(-7.9, 5.9, 139))),
         )
 
-    fit_inst = LogisticRegression(penalty='l2', class_weight='balanced')
+    fit_inst = LogisticRegression(solver='liblinear', penalty='l2',
+                                  max_iter=200, class_weight='balanced')
 
 
 class RidgeFlat(Ridge):
@@ -245,11 +246,29 @@ class SVCrbf(Base, Kernel):
     """
  
     tune_priors = (
-        ('fit__C', tuple(10 ** np.linspace(-1.5, 9.5, 89))),
-        ('fit__gamma', tuple(10 ** np.linspace(-8.9, -2.9, 11))),
+        ('fit__C', tuple(10 ** np.linspace(-4, 6, 121))),
         )
 
-    fit_inst = SVC(kernel='rbf', probability=True,
+    fit_inst = SVC(kernel='rbf', gamma='scale', probability=True,
+                   cache_size=500, class_weight='balanced')
+
+
+class SVCrbf_tunegamma(Base, Kernel):
+    """A support vector classifier using a radial basis kernel.
+
+    The `fit__C` and `fit__gamma` for this classifier exhibit similar
+    behaviour to the corresponding hyper-parameters for :class:`SVCquad`
+    above, and the values to tune over for both have been chosen using a
+    parallel logic.
+
+    """
+ 
+    tune_priors = (
+        ('fit__C', tuple(10 ** np.linspace(0, 8, 81))),
+        ('fit__gamma', tuple(10 ** np.linspace(-8.5, -3.5, 11))),
+        )
+
+    fit_inst = SVC(kernel='rbf', probability=True, gamma='scale',
                    cache_size=500, class_weight='balanced')
 
 

@@ -71,13 +71,19 @@ def main():
                  test_count=4, tune_splits=2, parallel_jobs=1)
     clf.fit_coh(cdata, test_mtype)
 
+    infer_mat = clf.infer_coh(cdata, test_mtype,
+                              infer_splits=12, infer_folds=4, parallel_jobs=2)
+
+    assert len(infer_mat) == len(cdata.get_train_samples())
+    assert {len(vals) for vals in infer_mat} == {3}
+    assert {hasattr(v, '__len__')
+            for vals in infer_mat for v in vals} == {False}
+    assert not (0 <= np.concatenate(infer_mat)).all()
+
     clf = SVCrbf()
     clf.tune_coh(cdata, test_mtype,
                  test_count=4, tune_splits=2, parallel_jobs=1)
     clf.fit_coh(cdata, test_mtype)
-
-    infer_mat = clf.infer_coh(cdata, test_mtype,
-                              infer_splits=4, infer_folds=4, parallel_jobs=1)
 
     print("All pipeline tests passed successfully!")
 

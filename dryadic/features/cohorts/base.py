@@ -474,7 +474,7 @@ class TransferCohort(Cohort):
 
     """
  
-    def __init__(self, omic_mats, cv_seed, test_prop):
+    def __init__(self, omic_mats, cv_seed, test_prop, test_samps=None):
         if not isinstance(omic_mats, dict):
             raise TypeError("`omic_mats` must be a dictionary, found {} "
                             "instead!".format(type(omic_mats)))
@@ -489,7 +489,7 @@ class TransferCohort(Cohort):
                 raise CohortError("Duplicate sample names found in -omic "
                                   "dataset for cohort {}!".format(coh))
 
-        super().__init__(omic_mats, cv_seed, test_prop)
+        super().__init__(omic_mats, cv_seed, test_prop, test_samps)
 
     def get_samples(self):
         """Retrieves all samples from each -omic dataset.
@@ -501,7 +501,7 @@ class TransferCohort(Cohort):
         return {coh: omic_mat.index.tolist()
                 for coh, omic_mat in self._omic_data.items()}
 
-    def _split_samples(self, test_prop):
+    def _split_samples(self, test_prop, test_samps):
         """Splits each dataset's samples into training and testing subsets.
 
         Args:
@@ -515,30 +515,47 @@ class TransferCohort(Cohort):
 
         """
         samp_dict = self.get_samples()
-        train_samps = {coh: set() for coh in samp_dict}
-        test_samps = {coh: set() for coh in samp_dict}
+        train_samps = {coh: None for coh in samp_dict}
+        test_samps = {coh: None for coh in samp_dict}
 
-        if not isinstance(test_prop, dict):
-            test_prop = {coh: test_prop for coh in samp_dict}
         if self._cv_seed is not None:
             random.seed(a=self._cv_seed)
+        if not hasattr(test_prop, '__len__'):
+            test_prop = {coh: test_prop for coh in samp_dict}
 
-        for coh, samps in samp_dict.items():
-            if test_prop[coh] < 0 or test_prop[coh] >= 1:
-                raise ValueError("Improper testing sample ratio for cohort "
-                                 "{} that is not at least zero and less than "
-                                 "one!".format(coh))
-
-            if test_prop[coh] > 0:
-                train_samps[coh] = set(
-                    random.sample(population=sorted(tuple(samps)),
-                                  k=int(round(len(samps)
-                                              * (1 - test_prop[coh]))))
+        for coh in samp_dict:
+            if test_prop[coh] is not None and test_samps[coh] is not None:
+                raise ValueError(
+                    "Cannot specify both a new testing proportion and a "
+                    "new set of testing samples!"
                     )
-                test_samps[coh] = set(samps) - train_samps[coh]
 
+            if test_prop[coh] is not None and (test_prop[coh] < 0
+                                               or test_prop[coh] >= 1):
+                raise ValueError("Improper testing sample ratio that is not "
+                                 "at least zero and less than one!")
+
+            # if not all samples are to be in the training sub-cohort, randomly
+            # choose samples for the testing cohort...
+            if test_prop[coh] is not None:
+                if test_prop[coh] > 0:
+                    train_samps[coh] = set(random.sample(
+                        population=sorted(tuple(samp_dict[coh])),
+                        k=int(round(len(samp_dict[coh])
+                                    * (1 - test_prop[coh])))
+                        ))
+
+                else:
+                    train_samps[coh] = set(samp_dict[coh])
+
+            elif test_samps[coh] is not None:
+                train_samps[coh] = set(samp_dict[coh]) - set(test_samps[coh])
+
+            # ...otherwise, copy the sample list to create the training cohort
             else:
-                train_samps[coh] = set(samps)
+                train_samps[coh] = set(samp_dict[coh])
+
+            test_samps[coh] = set(samp_dict[coh]) - train_samps[coh]
 
         return train_samps, test_samps
 

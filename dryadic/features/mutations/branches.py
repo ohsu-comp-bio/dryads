@@ -152,6 +152,7 @@ class MuType(object):
                 self._child[lbls] = sub_type
 
     def __getstate__(self):
+        """Defines instantiation parameters for unpickling."""
         state_dict = dict()
 
         for lbls, tp in self._child.items():
@@ -177,7 +178,18 @@ class MuType(object):
             if tp is not None
             })
 
+    def get_levels(self):
+        """Gets the property levels present in this type and its subtypes."""
+        levels = {self.cur_level}
+
+        for tp in self._child.values():
+            if tp is not None:
+                levels |= set(tp.get_levels())
+
+        return levels
+
     def get_sorted_levels(self):
+        """Gets sorted list of the properties present throughout this type."""
         child_levels = set()
 
         for tp in self._child.values():
@@ -192,16 +204,6 @@ class MuType(object):
             sorted_levels = self.cur_level,
 
         return sorted_levels
-
-    def get_levels(self):
-        """Gets the property levels present in this type and its subtypes."""
-        levels = {self.cur_level}
-
-        for tp in self._child.values():
-            if tp is not None:
-                levels |= set(tp.get_levels())
-
-        return levels
 
     def __hash__(self):
         """MuType hashes are defined in an analagous fashion to those of

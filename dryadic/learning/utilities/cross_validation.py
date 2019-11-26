@@ -8,26 +8,18 @@ use in gauging the efficacy of algorithms applied to predict -omic phenotypes.
 
 import numpy as np
 import pandas as pd
-import time
 
-from collections import Sized, defaultdict
-from functools import partial, reduce
+import time
+from functools import reduce
 from operator import or_
-from itertools import product
-from copy import deepcopy
 
 import scipy.sparse as sp
-from scipy.stats import rankdata
-
 from sklearn.base import is_classifier, clone
 from sklearn.utils import check_random_state
-from sklearn.utils.fixes import MaskedArray
 from sklearn.utils.validation import check_array, _num_samples
-from sklearn.metrics.scorer import check_scoring
-from sklearn.externals.joblib import Parallel, delayed, logger
+from joblib import Parallel, delayed
 
-from sklearn.model_selection import (
-    StratifiedShuffleSplit, StratifiedKFold, RandomizedSearchCV)
+from sklearn.model_selection import StratifiedShuffleSplit, StratifiedKFold
 from sklearn.model_selection._split import (
     _validate_shuffle_split, _approximate_mode, check_cv)
 from sklearn.model_selection._validation import (
@@ -35,7 +27,7 @@ from sklearn.model_selection._validation import (
 
 
 def cross_val_predict_omic(estimator, X, y=None, groups=None,
-                           force_test_samps=None,
+                           force_test_samps=None, lbl_type='prob',
                            cv_fold=4, cv_count=16, n_jobs=1, fit_params=None,
                            random_state=None, verbose=0):
     """Generates predicted mutation states for samples using internal
@@ -88,7 +80,7 @@ def cross_val_predict_omic(estimator, X, y=None, groups=None,
     parallel = Parallel(n_jobs=n_jobs, verbose=verbose, pre_dispatch='n_jobs')
     prediction_blocks = parallel(delayed(
         _omic_fit_and_predict)(clone(estimator), X, y,
-                               train, test, verbose, fit_params)
+                               train, test, verbose, fit_params, lbl_type)
         for train, test in cv_iter
         )
 
@@ -196,7 +188,8 @@ def check_consistent_omic_length(omic, pheno):
                         )
 
 
-def _omic_fit_and_predict(estimator, X, y, train, test, verbose, fit_params):
+def _omic_fit_and_predict(estimator, X, y, train, test,
+                          verbose, fit_params, lbl_type):
 
     fit_params = fit_params if fit_params is not None else {}
     fit_params = dict([(k, _index_param_value(X, v, train))
@@ -210,7 +203,8 @@ def _omic_fit_and_predict(estimator, X, y, train, test, verbose, fit_params):
     else:
         estimator.fit(X_train, y_train, **fit_params)
 
-    return estimator.predict_omic(X_test)
+    return estimator.parse_preds(estimator.predict_omic(X_test, lbl_type))
+
 
 def _omic_fit_and_score(estimator, X, y, scorer, train, test, verbose,
                         parameters, return_train_score=False,
@@ -324,10 +318,10 @@ def _omic_fit_and_score(estimator, X, y, scorer, train, test, verbose,
 
     else:
         fit_time = time.time() - start_time
-        test_score = _score(estimator, X_test, y_test, scorer)
+        test_score = _score(estimator, X_test, y_test, scorer, True)
         score_time = time.time() - start_time - fit_time
         if return_train_score:
-            train_score = _score(estimator, X_train, y_train, scorer)
+            train_score = _score(estimator, X_train, y_train, scorer, True)
 
     if verbose > 2:
         msg += ", score=%f" % test_score
@@ -384,124 +378,6 @@ def _omic_safe_split(estimator, X, y, indices, train_indices=None):
         y_subset = None
 
     return X_subset, y_subset
-
-
-class OmicRandomizedCV(RandomizedSearchCV):
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-
-    def fit(self, X, y, groups=None, **tune_params):
-        """Actual fitting,  performing the search over parameters."""
-
-        # gets and copies the prediction algorithm
-        estimator = self.estimator
-        base_estimator = clone(self.estimator)
-
-        # checks the methods used to produce cross validation splits and to
-        # score the accuracy of the predictions
-        cv = check_cv(self.cv, y, classifier=is_classifier(estimator))
-        self.scorer_ = check_scoring(self.estimator, scoring=self.scoring)
-
-        # finds how many splits of the data into training and testing sub-
-        # cohorts will be used, and which parameter values will be tested on
-        # each split
-        n_splits = cv.get_n_splits(X, y, groups)
-
-        self.candidate_params = list(self._get_param_iterator())
-        candidate_params = deepcopy(self.candidate_params)
-        n_candidates = len(self.candidate_params)
-
-        # updates the parameter values to be tested with parameter values
-        # specific to testing
-        for i in range(len(self.candidate_params)):
-            self.candidate_params[i].update(tune_params)
-
-        if self.verbose > 0 and isinstance(tune_params, Sized):
-            n_candidates = len(tune_params)
-            print("Fitting {0} folds for each of {1} candidates, totalling"
-                  " {2} fits".format(n_splits, n_candidates,
-                                     n_candidates * n_splits))
-
-        out = Parallel(
-            n_jobs=self.n_jobs, pre_dispatch='n_jobs', verbose=self.verbose
-            )(delayed(_omic_fit_and_score)(
-                clone(base_estimator), X, y, self.scorer_,
-                train, test, self.verbose, parameters,
-                return_train_score=self.return_train_score,
-                return_n_test_samples=True,
-                return_times=True, return_parameters=True,
-                error_score=self.error_score
-                )
-                for parameters, (train, test) in product(
-                    candidate_params, cv.split(X, y, groups))
-            )
-
-        # if one choose to see train score, "out" will contain train score info
-        if self.return_train_score:
-            (train_scores, test_scores, test_sample_counts,
-             fit_time, score_time, parameters) = zip(*out)
-        else:
-            (test_scores, test_sample_counts,
-             fit_time, score_time, parameters) = zip(*out)
-
-        results = dict()
-
-        def _store(key_name, array, weights=None, splits=False, rank=False):
-            """A small helper to store the scores/times to the cv_results_"""
-            array = np.array(array, dtype=np.float64).reshape(n_candidates,
-                                                              n_splits)
-            if splits:
-                for split_i in range(n_splits):
-                    results["split%d_%s"
-                            % (split_i, key_name)] = array[:, split_i]
-
-            array_means = np.average(array, axis=1, weights=weights)
-            results['mean_%s' % key_name] = array_means
-            # Weighted std is not directly available in numpy
-            array_stds = np.sqrt(np.average((array -
-                                             array_means[:, np.newaxis]) ** 2,
-                                            axis=1, weights=weights))
-            results['std_%s' % key_name] = array_stds
-
-            if rank:
-                results["rank_%s" % key_name] = np.asarray(
-                    rankdata(-array_means, method='min'), dtype=np.int32)
-
-        # Computed the (weighted) mean and std for test scores alone
-        # NOTE test_sample counts (weights) remain the same for all candidates
-        test_sample_counts = np.array(test_sample_counts[:n_splits],
-                                      dtype=np.int)
-
-        _store('test_score', test_scores, splits=True, rank=True,
-               weights=test_sample_counts if self.iid else None)
-        if self.return_train_score:
-            _store('train_score', train_scores, splits=True)
-        _store('fit_time', fit_time)
-        _store('score_time', score_time)
-
-        # Use one MaskedArray and mask all the places where the param is not
-        # applicable for that candidate. Use defaultdict as each candidate may
-        # not contain all the params
-        param_results = defaultdict(partial(MaskedArray,
-                                            np.empty(n_candidates,),
-                                            mask=True,
-                                            dtype=object))
-        for cand_i, params in enumerate(self._get_param_iterator()):
-            for name, value in params.items():
-                # An all masked empty array gets created for the key
-                # `"param_%s" % name` at the first occurence of `name`.
-                # Setting the value at an index also unmasks that index
-                param_results["param_%s" % name][cand_i] = value
-
-        results.update(param_results)
-
-        # saves the results of tuning the estimator as attributes
-        results['params'] = self.candidate_params
-        self.cv_results_ = results
-        self.n_splits_ = n_splits
-
-        return self
 
 
 class OmicShuffleSplit(StratifiedShuffleSplit):
