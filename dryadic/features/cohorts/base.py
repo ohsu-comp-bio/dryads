@@ -25,6 +25,8 @@ class Cohort(object):
         omic_data : An -omic dataset or collection thereof.
         cv_seed (int): A seed used for random sampling from the datasets.
         test_prop: The proportion of samples in each dataset used for testing.
+        test_samps: The samples in each dataset used for testing.
+                    Should be `None` if `test_prop` is already specified.
 
     """
 
@@ -82,7 +84,7 @@ class Cohort(object):
         """Retrieves features over which -omic measurements were made."""
 
     def train_data(self,
-                   pheno=None,
+                   pheno,
                    include_samps=None, exclude_samps=None,
                    include_feats=None, exclude_feats=None):
         """Retrieval of the training cohort from the -omic dataset."""
@@ -101,7 +103,7 @@ class Cohort(object):
         return self.get_omic_data(samps, feats), pheno_data
 
     def test_data(self,
-                  pheno=None,
+                  pheno,
                   include_samps=None, exclude_samps=None,
                   include_feats=None, exclude_feats=None):
         """Retrieval of the testing cohort from the -omic dataset."""

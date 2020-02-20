@@ -34,7 +34,17 @@ def main():
     for param, _ in clf.tune_priors:
         assert clf.get_params()[param] == cvs['params'][best_indx][param]
 
+    use_feats = cdata.get_features()[::3]
+    clf.fit_coh(cdata, test_mtype, include_feats=use_feats)
+    train_preds = clf.predict_train(cdata, include_feats=use_feats)
+    test_preds = clf.predict_test(cdata, include_feats=use_feats)
+    test_preds = clf.predict_test(cdata,
+                                  include_feats=use_feats, lbl_type='prob')
+
     clf.fit_coh(cdata, test_mtype)
+    train_preds = clf.predict_train(cdata)
+    test_preds = clf.predict_test(cdata, lbl_type='raw')
+
     tuned_coefs = np.floor(expr_data.shape[1]
                            * (clf.named_steps['feat'].mean_perc / 100))
     assert tuned_coefs == len(clf.named_steps['fit'].coef_[0]), (

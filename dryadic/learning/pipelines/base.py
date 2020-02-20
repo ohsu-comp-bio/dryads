@@ -132,23 +132,25 @@ class OmicPipe(Pipeline):
         return Xt, final_params
 
     def predict_train(self,
-                      cohort, pheno,
+                      cohort, lbl_type='prob',
                       include_samps=None, exclude_samps=None,
                       include_feats=None, exclude_feats=None):
         return self.predict_omic(
-            cohort.train_data(pheno,
+            cohort.train_data(None,
                               include_samps, exclude_samps,
-                              include_feats, exclude_feats)[0]
+                              include_feats, exclude_feats)[0],
+            lbl_type
             )
 
     def predict_test(self,
-                     cohort, pheno,
+                     cohort, lbl_type='prob',
                      include_samps=None, exclude_samps=None,
                      include_feats=None, exclude_feats=None):
         return self.predict_omic(
-            cohort.test_data(pheno,
+            cohort.test_data(None,
                              include_samps, exclude_samps,
-                             include_feats, exclude_feats)[0]
+                             include_feats, exclude_feats)[0],
+            lbl_type
             )
 
     def predict_omic(self, omic_data):

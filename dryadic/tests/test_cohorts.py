@@ -49,12 +49,12 @@ def main():
     cdata.update_split(new_seed=551, test_prop=1./3)
     assert cdata.get_seed() == 551
     assert len(cdata.get_samples()) == expr_data.shape[0]
-    assert cdata.train_data()[0].shape == (expr_data.shape[0] * 2/3,
-                                           expr_data.shape[1])
+    assert cdata.train_data(None)[0].shape == (expr_data.shape[0] * 2/3,
+                                               expr_data.shape[1])
     check_samp_split(cdata, expr_data.index)
 
     cdata.update_split(new_seed=551, test_samps=expr_data.index[:20])
-    assert cdata.test_data()[0].shape == (20, expr_data.shape[1])
+    assert cdata.test_data(None)[0].shape == (20, expr_data.shape[1])
     check_samp_split(cdata, expr_data.index)
 
     mut_data = load_omic_data('variants')

@@ -543,6 +543,8 @@ class MuTree(object):
         return len(self.get_samples())
 
     def sort_iter(self):
+        """Iterates through the branches of the tree, ordering mutation 
+           attributes where possible."""
 
         if self.mut_level in ['Exon', 'Location']:
             return iter(sorted(
@@ -890,6 +892,7 @@ class MuTree(object):
         """
         branch_mtypes = set()
         comb_mtypes = set()
+        #TODO: more error-checking for input values, e.g. sizes can't be zero
 
         if not isinstance(min_branch_size, str):
             branch_mtypes = self.branchtypes(

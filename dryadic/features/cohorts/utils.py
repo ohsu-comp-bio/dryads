@@ -207,14 +207,27 @@ def log_norm(data_mat):
 
 
 def drop_duplicate_genes(expr_mat):
+    """Removes genes that appear more than once in a matrix of -omic data.
+
+    Args:
+        expr_mat (:obj:`pd.DataFrame`)
+
+    Returns:
+        expr_mat (:obj:`pd.DataFrame`)
+
+    """
     gene_counts = expr_mat.columns.value_counts()
     dup_genes = gene_counts.index[gene_counts > 1]
     new_expr = expr_mat.copy()
- 
+
+    # for each gene which appears more than once, find the set of -omic
+    # measurements with the greatest total value
     for dup_gene in dup_genes:
         gn_indx = np.argwhere(new_expr.columns.get_loc(dup_gene)).flatten()
         use_indx = new_expr.iloc[:, gn_indx].sum().values.argmax()
- 
+
+        # remove the entries in the matrix for this gene that are not the
+        # entry with the greatest total value
         rmv_indxs = gn_indx[:use_indx].tolist()
         rmv_indxs += gn_indx[(use_indx + 1):].tolist()
         new_expr = new_expr.iloc[:, [i for i in range(new_expr.shape[1])

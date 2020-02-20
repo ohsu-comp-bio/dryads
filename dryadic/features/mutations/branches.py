@@ -691,6 +691,7 @@ class MuType(object):
             inv_mtype (MuType)
 
         """
+        #TODO: implement this in MuTrees
         return mtree.get_diff(MuType(mtree.allkey()), self)
 
     def subkeys(self):

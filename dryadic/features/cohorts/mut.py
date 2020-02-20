@@ -8,15 +8,30 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
 
     Args:
         expr_mat (pandas.DataFrame, shape = [n_samps, n_features])
+            -Omic dataset that will be used as input features for prediction.
         mut_df (pandas.DataFrame, shape = [n_muts, n_fields])
+            A list of mutations present in the samples, with various fields
+            corresponding to mutation attributes.
+
+        mut_levels (iterable of list-like), optional
+            Which combinations of mutation attributes to use when creating
+            hierarchical representations of mutation data. Default is to
+            initialize with one tree that only sorts mutations by gene.
+
+        mut_genes (set or list-like), optional
+            Set of genes whose mutation data should be considered. Recommended
+            for reducing the size of large mutation datasets, as default is to
+            use all mutations present in `mut_df`.
+
         cv_seed (int), optional: Seed used for random sampling.
         test_prop (float), optional: Proportion of cohort's samples that will
                                      be used for testing. Default is to not
                                      have a testing sub-cohort.
 
     Attributes:
-        mtree (MuTree): A hierarchical representation of the mutations present
-                        in the dataset.
+        mtrees (:obj:`dict` of :obj:`MuTree`)
+            Hierarchical representations of the mutations present in the
+            dataset, ordered according to combinations of mutation attributes.
 
     """
 
@@ -24,6 +39,8 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
                  expr_mat, mut_df, mut_levels=None, mut_genes=None,
                  domain_dir=None, leaf_annot=('PolyPhen', ),
                  cv_seed=None, test_prop=0):
+
+        # if a gene set is specified remove mutation data from other genes
         if mut_genes is not None:
             mut_df = mut_df.loc[mut_df.Gene.isin(mut_genes)]
 
@@ -33,6 +50,8 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
         self.leaf_annot = leaf_annot
         self.mtrees = dict()
 
+        # initialize mutation tree(s) according to specified mutation
+        # attribute combinations
         if mut_levels is None:
             self.add_mut_lvls(('Gene', ))
 
@@ -43,11 +62,28 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
         super().__init__(expr_mat, cv_seed, test_prop)
 
     def add_mut_lvls(self, lvls):
+        """Adds a hierarchical representation of mutations.
+
+        This method adds (or replaces an existing) tree of mutations based
+        on a given combination of mutation attributes.
+
+        Args:
+            lvls (list-like of :obj:`str`)
+
+
+        """
         self.mtrees[tuple(lvls)] = MuTree(self.muts, levels=lvls,
                                           domain_dir=self.domain_dir,
                                           leaf_annot=self.leaf_annot)
 
     def choose_mtree(self, pheno):
+        """Finds (or adds) the tree that matches a given mutation object.
+
+        Args:
+            pheno (MuType or MutComb): An abstract representation of a set of
+                                       mutations.
+        
+        """
         if isinstance(pheno, MuType):
             phn_lvls = pheno.get_sorted_levels()
 
