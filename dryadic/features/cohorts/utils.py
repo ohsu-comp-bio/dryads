@@ -81,6 +81,10 @@ def get_gencode(annot_file, include_types=None):
         annot_file (str): A .gtf file, downloaded from eg.
                           www.gencodegenes.org/releases/22.html
 
+        include_types (list-like or set of :obj:`str`), optional
+            Which annotation fields to include in the returned object.
+            The default only loads gene-level data.
+
     Returns:
         gn_annot (dict): Dictionary with keys corresponding to Ensembl gene
                          IDs and values consisting of dicts with
@@ -96,10 +100,10 @@ def get_gencode(annot_file, include_types=None):
     if include_types:
         use_types |= set(include_types)
 
-    if 'exon' in include_types:
+    if 'exon' in use_types:
         use_types |= {'UTR'}
 
-    # remove annotation records that are non-relevant or on sex chromosomes
+    # remove annotation records that are irrelevant or on sex chromosomes
     chroms_use = {'chr' + str(i+1) for i in range(22)}
     annot = annot.loc[annot['Type'].isin(use_types)
                       & annot['Chr'].isin(chroms_use), :]
@@ -127,17 +131,20 @@ def get_gencode(annot_file, include_types=None):
                          info_flds.reset_index(drop=True)],
                         axis=1)
 
+    # find records corresponding to protein-coding genes
     gene_df = info_df[(info_df.Type == 'gene')
                       & (info_df.gene_type == 'protein_coding')]
     gene_df = gene_df.set_index('gene_id')
 
-    gn_annot = {gn: dict(recs[['Chr', 'Start', 'End', 'Strand', 'gene_name']])
+    # create dictionary using these records with Ensembl gene ids as keys
+    gn_annot = {gn: {'Chr': recs.Chr, 'Start': recs.Start, 'End': recs.End,
+                     'Strand': recs.Strand, 'gene_name': recs.gene_name}
                 for gn, recs in gene_df.iterrows()}
+
     if len(use_types) > 1:
         info_df = info_df[info_df.transcript_type == 'protein_coding']
 
-    # group transcript records according to parent gene, transform gene
-    # records into a dictionary
+    # group transcript records according to parent gene
     if 'transcript' in use_types:
         tx_groups = info_df[(info_df.Type == 'transcript')
                             & info_df.gene_id.isin(gene_df.index)].groupby(
@@ -146,8 +153,11 @@ def get_gencode(annot_file, include_types=None):
         # insert the transcripts for each gene into the gene record dictionary
         for gn, tx_df in tx_groups:
             gn_annot[gn]['Transcripts'] = {
-                tx: dict(recs[['Start', 'End', 'transcript_name']])
-                for tx, recs in tx_df.set_index('transcript_id').iterrows()
+                tx_df.transcript_id.iloc[i]: {
+                    'Start': tx_df.Start.iloc[i], 'End': tx_df.End.iloc[i],
+                    'transcript_name': tx_df.transcript_name.iloc[i]
+                    }
+                for i in range(tx_df.shape[0])
                 }
 
     if 'exon' in use_types:
@@ -155,26 +165,26 @@ def get_gencode(annot_file, include_types=None):
             raise ValueError("Cannot load gene exon information without also "
                              "loading transcript information!")
 
-        # likewise, group exon records according to parent gene
-        regn_groups = info_df[info_df.Type.isin(['exon', 'UTR'])
-                              & info_df.gene_id.isin(gene_df.index)].groupby(
-                                  ['gene_id', 'transcript_id'])
+        # likewise, group exon and UTR records according to parent gene
+        use_df = info_df[info_df.gene_id.isin(gene_df.index)]
+        exn_groups = use_df[use_df.Type == 'exon'].groupby(
+            ['gene_id', 'transcript_id'])
+        utr_groups = use_df[use_df.Type == 'UTR'].groupby(
+            ['gene_id', 'transcript_id'])
 
-        for (gn, tx), regn_df in regn_groups:
-            exn_df = regn_df[regn_df.Type == 'exon']
-            utr_df = regn_df[regn_df.Type == 'UTR']
+        for (gn, tx), exn_df in exn_groups:
+            gn_annot[gn]['Transcripts'][tx]['UTRs'] = []
+            gn_annot[gn]['Transcripts'][tx]['Exons'] = exn_df[[
+                'Start', 'End', 'exon_id']].to_dict(orient='records')
 
-            gn_annot[gn]['Transcripts'][tx]['Exons'] = exn_df.sort_values(
-                by='exon_number')[['Start', 'End', 'exon_id']].apply(
-                    dict, axis=1).tolist()
             exn_count = len(gn_annot[gn]['Transcripts'][tx]['Exons'])
-
-            for i in range(len(gn_annot[gn]['Transcripts'][tx]['Exons'])):
+            for i in range(exn_count):
                 gn_annot[gn]['Transcripts'][tx]['Exons'][i][
                     'number'] = "{}/{}".format(i + 1, exn_count)
 
+        for (gn, tx), utr_df in utr_groups:
             gn_annot[gn]['Transcripts'][tx]['UTRs'] = utr_df.sort_values(
-                by='Start')[['Start', 'End']].apply(dict, axis=1).tolist()
+                by='Start')[['Start', 'End']].to_dict(orient='records')
  
     return gn_annot
 

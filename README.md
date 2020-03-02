@@ -1,14 +1,13 @@
-# Dryad
+# Dryad #
+`dryad` is a Python module for making predictions using -omic data. It
+consists of two main parts: `dryadic.features`, containing tools for loading
+-omic datasets and representing them in formats accessible to machine learning
+methods, and `dryadic.learning`, which incorporates these tools into pipelines
+designed to facilitate drawing biological insights from training prediction
+tasks on -omic data.
 
-Dryad is a Python module for representing and predicting -omic features.
+## Installation ##
+The easiest way to install `dryad` is via PyPI:
 
-The following submodules are available in Dryad:
-
-### `dryadic.features` ###
-Loading -omic datasets and representing them in formats accessible to machine
-learning methods.
-
-### `dryadic.learning` ###
-Algorithms and pipelines for using -omic datasets to predict -omic and
-phenotypic features.
+```pip install -i https://test.pypi.org/simple/ dryad==0.4.2```
 

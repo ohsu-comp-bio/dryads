@@ -105,7 +105,6 @@ def main():
                                            cv_seed=None, test_prop=0.3)
     trs_cdata.update_split(new_seed=101)
 
-    import pdb; pdb.set_trace()
     mult_clf.tune_coh(trs_cdata, sing_mtype,
                       test_count=4, tune_splits=2, parallel_jobs=1)
     print(mult_clf)

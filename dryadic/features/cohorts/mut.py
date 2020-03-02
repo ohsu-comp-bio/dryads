@@ -18,7 +18,7 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
             hierarchical representations of mutation data. Default is to
             initialize with one tree that only sorts mutations by gene.
 
-        mut_genes (set or list-like), optional
+        mut_genes (set or list-like of :obj:`str`), optional
             Set of genes whose mutation data should be considered. Recommended
             for reducing the size of large mutation datasets, as default is to
             use all mutations present in `mut_df`.

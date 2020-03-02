@@ -6,7 +6,7 @@ data_dir = os.path.join(base_dir, "resources")
 sys.path.extend([os.path.join(base_dir, '../..')])
 
 from dryadic.features.cohorts.base import UniCohort
-from dryadic.features.cohorts import *
+from dryadic.features.cohorts import BaseMutationCohort
 from dryadic.features.mutations import MuType
 
 import numpy as np
@@ -17,6 +17,16 @@ from itertools import combinations as combn
 def load_omic_data(data_lbl):
     return pd.read_csv(os.path.join(data_dir, "{}.txt.gz".format(data_lbl)),
                        sep='\t', index_col=0)
+
+
+def load_muts(muts_lbl):
+    return pd.read_csv(
+        os.path.join(os.path.dirname(__file__), 'resources',
+                     "muts_{}.tsv".format(muts_lbl)),
+        engine='python', sep='\t', comment='#',
+        names=['Gene', 'Form', 'Sample', 'Protein', 'Transcript', 'Exon',
+               'ref_count', 'alt_count', 'PolyPhen']
+        )
 
 
 def check_samp_split(cdata, expr_samps):

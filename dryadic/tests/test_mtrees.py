@@ -10,22 +10,12 @@ Author: Michal Grzadkowski <grzadkow@ohsu.edu>
 
 from ..features.mutations import MuType, MuTree
 from .test_mtypes import mtype_tester
+from .test_cohorts import load_muts
 import pytest
 
-import os
 import pandas as pd
 from itertools import product, chain
 from itertools import combinations as combn
-
-
-def load_muts(muts_lbl):
-    return pd.read_csv(
-        os.path.join(os.path.dirname(__file__), 'resources',
-                     "muts_{}.tsv".format(muts_lbl)),
-        engine='python', sep='\t', comment='#',
-        names=['Gene', 'Form', 'Sample', 'Protein', 'Transcript', 'Exon',
-               'ref_count', 'alt_count', 'PolyPhen']
-        )
 
 
 def pytest_generate_tests(metafunc):
