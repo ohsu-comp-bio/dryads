@@ -1,6 +1,5 @@
 
 from .branches import MuType
-from ..data import get_protein_domains
 
 import numpy as np
 import pandas as pd
@@ -88,8 +87,7 @@ class MuTree(object):
     # mapping between fields in an input mutation table and
     # custom mutation levels
     mut_fields = {
-        'Type': ('Form', 'Protein'),
-        'Domain': ('Transcript', 'Protein'),
+        'Type': ('Consequence', 'Protein'),
         'Location': ('Protein', ),
         }
 
@@ -123,7 +121,7 @@ class MuTree(object):
 
         # if a parsing label is present, add the parsed level
         # to the table of mutations
-        elif len(lvl_info) == 2 and lvl_info[0] != 'Domain':
+        elif len(lvl_info) == 2:
             parse_lbl = lvl_info[1].lower()
             parse_fx = 'parse_{}'.format(parse_lbl)
 
@@ -158,12 +156,6 @@ class MuTree(object):
 
         elif lvl_name in muts:
             split_muts = dict(tuple(muts.groupby(lvl_name)))
-
-        # if the specified level is not a column in the mutation table,
-        # we assume it's a custom mutation level
-        elif 'Domain_' in lvl_name:
-            kwargs.update({'domain_lbl': lvl_info[1]})
-            split_muts = cls.muts_domain(muts, **kwargs)
 
         else:
             split_fx = 'muts_{}'.format(lvl_info[0].lower())
@@ -220,45 +212,6 @@ class MuTree(object):
             new_muts['Other'] = muts.loc[other_indx, :]
 
         return new_muts
-
-    @staticmethod
-    def muts_domain(muts, **domain_args):
-        """Parses mutations according to overlap with a protein binding
-           domain identified in the given database.
-
-        """
-
-        # find the domains matched to the genes in the list of mutations
-        domain_data = domain_args[domain_args['domain_lbl']]
-        match_indx = domain_data['Transcript'].isin(muts['Transcript'])
-        use_domain = domain_data.loc[match_indx, :]
-
-        # initialize the list of mutations matched to each domain as well as
-        # the list of mutations not matched to any domain
-        new_muts = {domain: pd.DataFrame([])
-                    for domain in set(use_domain['DomainID'])}
-        none_indx = pd.Series([True] * muts.shape[0])
-
-        # for each mutation, get the location of the protein it affects
-        loc_tbl = pd.to_numeric(
-            muts['Protein'].str.extract('(^p\\.[A-Z|*])([0-9]+)',
-                                        expand=False).iloc[:, 1]
-            )
-
-        # for each domain, find the mutations whose location falls within
-        # the boundaries of the domain
-        for _, _, domain_id, start_pos, end_pos in use_domain.values:
-            domain_indx = loc_tbl.between(start_pos, end_pos).tolist()
-
-            if any(domain_indx):
-                none_indx.loc[domain_indx] = False
-                new_muts[domain_id] = pd.concat([new_muts[domain_id],
-                                                 muts.loc[domain_indx, :]])
-
-        if none_indx.any():
-            new_muts['none'] = muts.loc[none_indx.tolist(), :]
-
-        return {dom: v for dom, v in new_muts.items() if v.shape[0]}
 
     @staticmethod
     def muts_location(muts):
@@ -428,16 +381,6 @@ class MuTree(object):
 
         else:
             self.depth = 0
-
-            for level in levels:
-                if 'Domain_' in level:
-                    domain_lbl = level.split('Domain_')[1]
-
-                    if domain_lbl not in kwargs:
-                        kwargs.update({
-                            domain_lbl: get_protein_domains(
-                                kwargs['domain_dir'], domain_lbl)
-                            })
 
         # intializes mutation hierarchy construction variables
         lvls_left = list(levels)

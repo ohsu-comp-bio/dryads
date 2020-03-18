@@ -1,5 +1,6 @@
 
-from .base import UniCohort, PresenceCohort, ValueCohort, TransferCohort
+from .base import (UniCohort, PresenceCohort, ValueCohort,
+                   TransferCohort, CohortError)
 from ..mutations import *
 
 
@@ -37,16 +38,30 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
 
     def __init__(self,
                  expr_mat, mut_df, mut_levels=None, mut_genes=None,
-                 domain_dir=None, leaf_annot=('PolyPhen', ),
+                 gene_annot=None, leaf_annot=('PolyPhen', ),
                  cv_seed=None, test_prop=0):
 
-        # if a gene set is specified remove mutation data from other genes
         if mut_genes is not None:
-            mut_df = mut_df.loc[mut_df.Gene.isin(mut_genes)]
+            if 'Gene' in mut_df:
+                mut_df = mut_df.loc[mut_df.Gene.isin(mut_genes)]
 
-        self.mut_genes = mut_genes
+            else:
+                raise CohortError("If `mut_genes` is specified, then "
+                                  "`mut_df` must have a `Gene` column!")
+
+        if 'Scale' in mut_df and 'Copy' in mut_df.Scale:
+            for i in range(len(mut_levels)):
+                if 'Scale' not in mut_levels[i]:
+                    if 'Gene' in mut_levels[i]:
+                        scale_lvl = mut_levels[i].index('Gene') + 1
+                    else:
+                        scale_lvl = 0
+ 
+                    mut_levels[i].insert(scale_lvl, 'Scale')
+                    mut_levels[i].insert(scale_lvl + 1, 'Copy')
+
         self.muts = mut_df
-        self.domain_dir = domain_dir
+        self.gene_annot = gene_annot
         self.leaf_annot = leaf_annot
         self.mtrees = dict()
 
@@ -73,7 +88,6 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
 
         """
         self.mtrees[tuple(lvls)] = MuTree(self.muts, levels=lvls,
-                                          domain_dir=self.domain_dir,
                                           leaf_annot=self.leaf_annot)
 
     def choose_mtree(self, pheno):
@@ -226,6 +240,34 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
                 )
 
         return stat_list
+
+    def get_cis_genes(self, mtype, cis_lbl):
+        if self.gene_annot is None:
+            raise CohortError("Cannot use this cohort to retrieve "
+                              "cis-affected genes for a mutation type "
+                              "without loading an annotation dataset during "
+                              "instantiation!")
+
+        if mtype.cur_level != 'Gene':
+            raise ValueError("Cannot retrieve cis-affected genes for a "
+                             "mutation type not representing a subgrouping "
+                             "of a gene or set of genes!")
+
+        if cis_lbl == 'None':
+            ex_genes = set()
+        elif cis_lbl == 'Self':
+            ex_genes = set(mtype.get_labels())
+
+        elif cis_lbl == 'Chrm':
+            mtype_chrs = {self.gene_annot[gene]['Chr']
+                          for gene in mtype.get_labels()}
+            ex_genes = {gene for gene, annot in self.gene_annot.items()
+                        if annot['Chr'] in mtype_chrs}
+
+        else:
+            raise ValueError("Unrecognized value for `cis_lbl`!")
+
+        return ex_genes
 
     def data_hash(self):
         return super().data_hash(), hash(tuple(sorted(self.mtrees.items())))
