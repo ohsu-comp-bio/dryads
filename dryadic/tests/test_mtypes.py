@@ -254,6 +254,10 @@ class TestCaseBinary:
                 assert mtype1 | mtype2 == mtype2 | mtype1
                 assert mtype1 & mtype2 == mtype2 & mtype1
 
+                if mtype1 == mtype2:
+                    assert (mtype1 - mtype2).is_empty()
+                    assert (mtype2 - mtype1).is_empty()
+
                 assert (mtype1 | mtype2).is_supertype(mtype1 & mtype2)
                 assert mtype1 - mtype2 == mtype1 - (mtype1 & mtype2)
                 assert mtype1 | mtype2 == (

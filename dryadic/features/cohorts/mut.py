@@ -41,6 +41,7 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
                  gene_annot=None, leaf_annot=('PolyPhen', ),
                  cv_seed=None, test_prop=0):
 
+        # TODO: remove this feature?
         if mut_genes is not None:
             if 'Gene' in mut_df:
                 mut_df = mut_df.loc[mut_df.Gene.isin(mut_genes)]
@@ -49,6 +50,8 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
                 raise CohortError("If `mut_genes` is specified, then "
                                   "`mut_df` must have a `Gene` column!")
 
+        # reconciles attribute levels specific to copy number mutations with
+        # those associated with point mutations
         if 'Scale' in mut_df and 'Copy' in mut_df.Scale:
             for i in range(len(mut_levels)):
                 if 'Scale' not in mut_levels[i]:
@@ -241,26 +244,57 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
 
         return stat_list
 
-    def get_cis_genes(self, mtype, cis_lbl):
+    def get_cis_genes(self, cis_lbl, mtype=None, cur_genes=None):
+        """Identifies the genes located in the proximity of a given mutation.
+
+        This is a utility method that applies the genomic annotation data
+        loaded with the cohort to find genes located on the same chromosome
+        as a given mutation, usually for the purpose of removing the
+        expression features of such genes from a machine learning pipeline so
+        as to prevent the direct cis-effects of a mutation from influencing
+        the pipeline output.
+
+        Args:
+            cis_lbl (str), one of {'None', 'Self', 'Chrm'}
+                Return an empty set (None), the gene associated with the
+                mutation (Self), or all the genes on the same chromosome.
+
+            mtype (MuType), optional
+            cur_genes (list-like of :obj:`str`), optional
+                Instead of specifying a mutation, a set of genes can be given.
+                This function will then list the genes proximal to this set.
+                If both are given this function will ignore this argument.
+
+        Returns:
+            ex_genes (:obj:`set` of :obj:`str`)
+
+        """
+
         if self.gene_annot is None:
             raise CohortError("Cannot use this cohort to retrieve "
                               "cis-affected genes for a mutation type "
                               "without loading an annotation dataset during "
                               "instantiation!")
 
-        if mtype.cur_level != 'Gene':
-            raise ValueError("Cannot retrieve cis-affected genes for a "
-                             "mutation type not representing a subgrouping "
-                             "of a gene or set of genes!")
+        if mtype is not None:
+            if mtype.cur_level != 'Gene':
+                raise ValueError("Cannot retrieve cis-affected genes for "
+                                 "a mutation type not representing a "
+                                 "subgrouping of a gene or set of genes!")
+
+            cur_genes = mtype.get_labels()
+
+        elif cur_genes is None:
+            raise ValueError("One of `mtype` or `cur_genes` has to be "
+                             "specified to identify local genes!")
 
         if cis_lbl == 'None':
             ex_genes = set()
         elif cis_lbl == 'Self':
-            ex_genes = set(mtype.get_labels())
+            ex_genes = set(cur_genes)
 
         elif cis_lbl == 'Chrm':
-            mtype_chrs = {self.gene_annot[gene]['Chr']
-                          for gene in mtype.get_labels()}
+            mtype_chrs = {self.gene_annot[gene]['Chr'] for gene in cur_genes}
             ex_genes = {gene for gene, annot in self.gene_annot.items()
                         if annot['Chr'] in mtype_chrs}
 
@@ -270,6 +304,7 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
         return ex_genes
 
     def data_hash(self):
+        """Generates a unique tag of the expression and mutation datasets."""
         return super().data_hash(), hash(tuple(sorted(self.mtrees.items())))
 
 

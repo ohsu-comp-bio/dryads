@@ -1,3 +1,4 @@
+"""Miscellaneous functions useful for processing data stored in cohorts."""
 
 import numpy as np
 import pandas as pd
@@ -91,7 +92,8 @@ def get_gencode(annot_file, include_types=None):
                          annotation fields.
 
     """
-    annot = pd.read_csv(annot_file, usecols=[0, 2, 3, 4, 6, 8],
+    annot = pd.read_csv(annot_file, engine='c', dtype='object',
+                        usecols=[0, 2, 3, 4, 6, 8],
                         names=['Chr', 'Type', 'Start', 'End',
                                'Strand', 'Info'],
                         sep='\t', header=None, comment='#')
