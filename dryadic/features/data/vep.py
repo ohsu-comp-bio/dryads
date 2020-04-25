@@ -6,10 +6,30 @@ import pandas as pd
 
 
 field_map = {
-    'Uploaded_variation': "Sample", 'SYMBOL': "Gene", 'Gene': "ENSGene",
-    'Protein_position': "Position", 'EXON': "Exon", 'INTRON': "Intron",
+    'Uploaded_variation': "Sample", 'Allele': "VarAllele", 'Gene': "ENSGene",
+    'Protein_position': "Position",
+    'SYMBOL': "Gene", 'EXON': "Exon", 'INTRON': "Intron",
     'POLYPHEN': "PolyPhen", 'DOMAINS': "Domains", 'VARIANT_CLASS': "Class",
     }
+
+# default pick order copied from uswest.ensembl.org/info/genome/variation
+# /prediction/predicted_data.html#consequences on April 21, 2020
+consequences = [
+    'transcript_ablation', 'splice_acceptor_variant', 'splice_donor_variant',
+    'stop_gained', 'frameshift_variant', 'stop_lost', 'start_lost',
+    'transcript_amplification', 'inframe_insertion', 'inframe_deletion',
+    'missense_variant', 'protein_altering_variant', 'splice_region_variant',
+    'incomplete_terminal_codon_variant', 'start_retained_variant',
+    'stop_retained_variant', 'synonymous_variant', 'coding_sequence_variant',
+    'mature_miRNA_variant', '5_prime_UTR_variant', '3_prime_UTR_variant',
+    'non_coding_transcript_exon_variant', 'intron_variant',
+    'NMD_transcript_variant', 'non_coding_transcript_variant',
+    'upstream_gene_variant', 'downstream_gene_variant', 'TFBS_ablation',
+    'TFBS_amplification', 'TF_binding_site_variant',
+    'regulatory_region_ablation', 'regulatory_region_amplification',
+    'feature_elongation', 'regulatory_region_variant', 'feature_truncation',
+    'intergenic_variant'
+    ]
 
 
 class VariantEffectPredictorError(Exception):
@@ -18,8 +38,9 @@ class VariantEffectPredictorError(Exception):
 
 def process_variants(var_df, out_fields=None, cache_dir=None, temp_dir=None,
                      species='homo_sapiens', assembly='GRCh37',
-                     flag_pick=False, forks=None, buffer_size=1e4,
-                     vep_version=99, distance=5000, update_cache=False):
+                     distance=5000, flag_pick=False,
+                     consequence_choose='sort', forks=None,
+                     buffer_size=1e4, vep_version=99, update_cache=False):
 
     if out_fields is None:
         out_fields = ["Gene"]
@@ -65,19 +86,42 @@ def process_variants(var_df, out_fields=None, cache_dir=None, temp_dir=None,
 
     vep_subm = ["vep", "-i", var_file, "-o", "STDOUT", "-a", assembly,
                 "-s", species, "--cache", "--dir_cache", cache_dir,
-                "--buffer_size", format(buffer_size, '.0f'),
                 "--distance", distance, "--no_stats", "--tab",
-                "--symbol", "--canonical", "--offline"]
+                "--buffer_size", format(buffer_size, '.0f'), "--offline"]
 
-    if forks is not None and isinstance(forks, int):
-        vep_subm += ["--fork", str(forks)]
+    if forks is not None:
+        if isinstance(forks, int):
+            vep_subm += ["--fork", str(forks)]
 
-    vep_fields = ["Uploaded_variation", "Feature", "Gene", "Consequence",
-                  "Protein_position", "CANONICAL"]
+        else:
+            raise ValueError("`forks` argument must be an integer describing "
+                             "a number of compute cores!")
 
+    # these fields are both in the default VEP output and are to be
+    # returned by this wrapper no matter what arguments are given
+    vep_fields = ["Uploaded_variation", "Feature"]
+
+    # these fields are in the default VEP output but are only returned by this
+    # wrapper if they are explicitly requested
+    if 'Location' in out_fields:
+        vep_fields += ["Location"]
+    if 'VarAllele' in out_fields:
+        vep_fields += ["Allele"]
+    if 'ENSGene' in out_fields:
+        vep_fields += ["Gene"]
+    if 'Consequence' in out_fields:
+        vep_fields += ["Consequence"]
+    if 'Position' in out_fields:
+        vep_fields += ["Protein_position"]
+
+    # these fields are also optionally returned but do not appear
+    # in the default VEP output
     if 'Gene' in out_fields:
         vep_subm += ["--symbol"]
         vep_fields += ["SYMBOL"]
+    if 'Canonical' in out_fields:
+        vep_subm += ["--canonical"]
+        vep_fields += ["CANONICAL"]
 
     if 'Exon' in out_fields or 'Intron' in out_fields:
         vep_subm += ["--numbers"]
@@ -89,9 +133,9 @@ def process_variants(var_df, out_fields=None, cache_dir=None, temp_dir=None,
     if 'HGVSc' in out_fields or 'HGVSp' in out_fields:
         vep_subm += ["--hgvs"]
     if 'HGVSp' in out_fields:
-        vep_fields += ['HGVSp']
+        vep_fields += ["HGVSp"]
     if 'HGVSc' in out_fields:
-        vep_fields += ['HGVSc']
+        vep_fields += ["HGVSc"]
 
     if 'Domains' in out_fields:
         vep_subm += ["--domains"]
@@ -123,7 +167,7 @@ def process_variants(var_df, out_fields=None, cache_dir=None, temp_dir=None,
 
     # run the VEP command line tool using the given parameters
     vep_subm += ["--fields", ','.join(vep_fields)]
-    vep_resp = subprocess.run(vep_subm + ["--numbers"],
+    vep_resp = subprocess.run(vep_subm,
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     # handle errors thrown by VEP, other than Perl flow operator issues
@@ -140,6 +184,25 @@ def process_variants(var_df, out_fields=None, cache_dir=None, temp_dir=None,
     vep_out[i] = vep_out[i].split('#')[1]
     mut_df = pd.read_csv(StringIO('\n'.join(vep_out[i:])), sep='\t').rename(
         columns=field_map)
+
+    if consequence_choose is not None and 'Consequence' in out_fields:
+        conseq_lists = mut_df.Consequence.str.split(',')
+
+        if consequence_choose == 'sort':
+            mut_df = mut_df.assign(Consequence=conseq_lists.apply(
+                lambda vals: ','.join(sorted(
+                    vals, key=lambda val: consequences.index(val)))
+                ))
+
+        elif consequence_choose == 'pick':
+            mut_df = mut_df.assign(Consequence=conseq_lists.apply(
+                lambda vals: sorted(
+                    vals, key=lambda val: consequences.index(val))[0]
+                ))
+
+        else:
+            raise ValueError("Unrecognized value for `consequence_choose`, "
+                             "must be one of {'sort', 'pick'}!")
 
     if 'Domains' in out_fields:
         domn_data = mut_df.Domains.str.split(',').apply(
