@@ -19,11 +19,6 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
             hierarchical representations of mutation data. Default is to
             initialize with one tree that only sorts mutations by gene.
 
-        mut_genes (set or list-like of :obj:`str`), optional
-            Set of genes whose mutation data should be considered. Recommended
-            for reducing the size of large mutation datasets, as default is to
-            use all mutations present in `mut_df`.
-
         cv_seed (int), optional: Seed used for random sampling.
         test_prop (float), optional: Proportion of cohort's samples that will
                                      be used for testing. Default is to not
@@ -37,18 +32,8 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
     """
 
     def __init__(self,
-                 expr_mat, mut_df, mut_levels=None, mut_genes=None,
-                 gene_annot=None, leaf_annot=('PolyPhen', ),
-                 cv_seed=None, test_prop=0):
-
-        # TODO: remove this feature?
-        if mut_genes is not None:
-            if 'Gene' in mut_df:
-                mut_df = mut_df.loc[mut_df.Gene.isin(mut_genes)]
-
-            else:
-                raise CohortError("If `mut_genes` is specified, then "
-                                  "`mut_df` must have a `Gene` column!")
+                 expr_mat, mut_df, mut_levels, gene_annot=None,
+                 leaf_annot=('PolyPhen', ), cv_seed=None, test_prop=0):
 
         # reconciles attribute levels specific to copy number mutations with
         # those associated with point mutations
@@ -70,12 +55,8 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
 
         # initialize mutation tree(s) according to specified mutation
         # attribute combinations
-        if mut_levels is None:
-            self.add_mut_lvls(('Gene', ))
-
-        else:
-            for lvls in mut_levels:
-                self.add_mut_lvls(lvls)
+        for lvls in mut_levels:
+            self.add_mut_lvls(lvls)
 
         super().__init__(expr_mat, cv_seed, test_prop)
 
@@ -93,36 +74,59 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
         self.mtrees[tuple(lvls)] = MuTree(self.muts, levels=lvls,
                                           leaf_annot=self.leaf_annot)
 
-    def choose_mtree(self, pheno):
-        """Finds (or adds) the tree that matches a given mutation object.
+    def choose_mtree(self, mtype):
+        """Finds the tree that matches a given mutation object."""
+        mut_lvls = mtype.get_sorted_levels()
 
-        Args:
-            pheno (MuType or MutComb): An abstract representation of a set of
-                                       mutations.
-        
-        """
-        if isinstance(pheno, MuType):
-            phn_lvls = pheno.get_sorted_levels()
+        if not mut_lvls:
+            mtree_lvls = tuple(self.mtrees)[0]
+        elif mut_lvls in self.mtrees:
+            mtree_lvls = mut_lvls
 
-            if not phn_lvls:
-                mtree_lvls = tuple(self.mtrees)[0]
-            elif phn_lvls in self.mtrees:
-                mtree_lvls = phn_lvls
+        else:
+            for lvls, mtree in self.mtrees.items():
+                if mtree.match_levels(mtype):
+                    mtree_lvls = lvls
+                    break
 
             else:
-                for mut_lvls, mtree in self.mtrees.items():
-                    if mtree.match_levels(pheno):
-                        mtree_lvls = mut_lvls
-                        break
-
-                else:
-                    self.add_mut_lvls(phn_lvls)
-                    mtree_lvls = phn_lvls
-
-        elif isinstance(pheno, MutComb):
-            mtree_lvls = self.choose_mtree(list(pheno.mtypes)[0])
+                self.add_mut_lvls(mut_lvls)
+                mtree_lvls = mut_lvls
 
         return mtree_lvls
+
+    def mtrees_status(self, pheno, samps=None):
+        return self.mtrees[self.choose_mtree(pheno)].status(samps, pheno)
+
+    def get_pheno(self, pheno, samps=None):
+        if samps is None:
+            samps = sorted(self.get_samples())
+
+        elif set(samps) - set(self.get_samples()):
+            raise ValueError("Cannot retrieve phenotypes for samples "
+                             "not in this cohort!")
+
+        if isinstance(pheno, MuType):
+            stat_list = self.mtrees_status(pheno, samps)
+
+        elif isinstance(pheno, MutComb):
+            stat_list = [
+                all(phns) for phns in zip(*[self.mtrees_status(mtype, samps)
+                                            for mtype in pheno.mtypes])
+                ]
+
+            if pheno.not_mtype is not None:
+                stat_list = [
+                    phn and not nphn
+                    for phn, nphn in zip(
+                        stat_list, self.mtrees_status(pheno.not_mtype, samps))
+                    ]
+
+        else:
+            raise TypeError(
+                "Unrecognized class of phenotype `{}`!".format(type(pheno)))
+
+        return stat_list
 
     def train_pheno(self, pheno, samps=None):
         """Gets the mutation status of samples in the training cohort.
@@ -138,39 +142,12 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
             stat_list (:obj:`list` of :obj:`bool`)
 
         """
-
-        # use all the training samples if no list of samples is provided
         if samps is None:
             samps = self.get_train_samples()
-
-        # otherwise, filter out the provided samples
-        # not in the training cohort
         else:
             samps = sorted(set(samps) & set(self.get_train_samples()))
- 
-        if isinstance(pheno, MuType) or isinstance(pheno, MutComb):
-            mtree_lvls = self.choose_mtree(pheno)
-            stat_list = self.mtrees[mtree_lvls].status(samps, pheno)
 
-        elif isinstance(pheno, dict):
-            stat_list = self.cna_pheno(pheno, samps)
-
-        elif isinstance(tuple(pheno)[0], MuType):
-            stat_list = [
-                self.mtrees[self.choose_mtree(phn)].status(samps, phn)
-                for phn in pheno
-                ]
-
-        elif isinstance(tuple(pheno)[0], dict):
-            stat_list = [self.cna_pheno(phn, samps) for phn in pheno]
-
-        else:
-            raise TypeError(
-                "A VariantCohort accepts only MuTypes, CNA dictionaries, or "
-                "lists thereof as training phenotypes!"
-                )
-
-        return stat_list
+        return self.get_pheno(pheno, samps)
 
     def test_pheno(self, pheno, samps=None):
         """Gets the mutation status of samples in the testing cohort.
@@ -186,38 +163,12 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
             stat_list (:obj:`list` of :obj:`bool`)
 
         """
-
-        # use all the testing samples if no list of samples is provided
         if samps is None:
             samps = self.get_test_samples()
-
-        # otherwise, filter out the provided samples not in the testing cohort
         else:
             samps = sorted(set(samps) & set(self.get_test_samples()))
-        
-        if isinstance(pheno, MuType) or isinstance(pheno, MutComb):
-            mtree_lvls = self.choose_mtree(pheno)
-            stat_list = self.mtrees[mtree_lvls].status(samps, pheno)
 
-        elif isinstance(pheno, dict):
-            stat_list = self.cna_pheno(pheno, samps)
-
-        elif isinstance(tuple(pheno)[0], MuType):
-            stat_list = [
-                self.mtrees[self.choose_mtree(phn)].status(samps, phn)
-                for phn in pheno
-                ]
-
-        elif isinstance(tuple(pheno)[0], dict):
-            stat_list = [self.cna_pheno(phn, samps) for phn in pheno]
-
-        else:
-            raise TypeError(
-                "A VariantCohort accepts only MuTypes, CNA dictionaries, or "
-                "lists thereof as testing phenotypes!"
-                )
-
-        return stat_list
+        return self.get_pheno(pheno, samps)
 
     def cna_pheno(self, cna_dict, samps):
         if self.copy_data is None:
