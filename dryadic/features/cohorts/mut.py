@@ -2,15 +2,16 @@
 from .base import (UniCohort, PresenceCohort, ValueCohort,
                    TransferCohort, CohortError)
 from ..mutations import *
+import pandas as pd
 
 
 class BaseMutationCohort(PresenceCohort, UniCohort):
     """Base class for -omic datasets predicting binary genomic phenotypes.
 
     Args:
-        expr_mat (pandas.DataFrame, shape = [n_samps, n_features])
+        expr_mat (pd.DataFrame, shape = [n_samps, n_features])
             -Omic dataset that will be used as input features for prediction.
-        mut_df (pandas.DataFrame, shape = [n_muts, n_fields])
+        var_df (pd.DataFrame, shape = [n_muts, n_fields])
             A list of mutations present in the samples, with various fields
             corresponding to mutation attributes.
 
@@ -32,26 +33,29 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
     """
 
     def __init__(self,
-                 expr_mat, mut_df, mut_levels, gene_annot=None,
+                 expr_mat, var_df, mut_levels, copy_df=None, gene_annot=None,
                  leaf_annot=('PolyPhen', ), cv_seed=None, test_prop=0):
+
+        self.muts = var_df
+        self.gene_annot = gene_annot
+        self.leaf_annot = leaf_annot
+        self.mtrees = dict()
 
         # reconciles attribute levels specific to copy number mutations with
         # those associated with point mutations
-        if 'Scale' in mut_df and 'Copy' in mut_df.Scale:
+        if copy_df is not None:
+            self.muts = pd.concat([self.muts, copy_df], sort=True)
+
             for i in range(len(mut_levels)):
                 if 'Scale' not in mut_levels[i]:
                     if 'Gene' in mut_levels[i]:
                         scale_lvl = mut_levels[i].index('Gene') + 1
                     else:
                         scale_lvl = 0
- 
-                    mut_levels[i].insert(scale_lvl, 'Scale')
-                    mut_levels[i].insert(scale_lvl + 1, 'Copy')
 
-        self.muts = mut_df
-        self.gene_annot = gene_annot
-        self.leaf_annot = leaf_annot
-        self.mtrees = dict()
+                    mut_levels[i] = (tuple(mut_levels[i][:scale_lvl])
+                                     + ('Scale', 'Copy')
+                                     + tuple(mut_levels[i][scale_lvl:]))
 
         # initialize mutation tree(s) according to specified mutation
         # attribute combinations
@@ -74,9 +78,9 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
         self.mtrees[tuple(lvls)] = MuTree(self.muts, levels=lvls,
                                           leaf_annot=self.leaf_annot)
 
-    def choose_mtree(self, mtype):
+    def find_pheno(self, mut):
         """Finds the tree that matches a given mutation object."""
-        mut_lvls = mtype.get_sorted_levels()
+        mut_lvls = mut.get_sorted_levels()
 
         if not mut_lvls:
             mtree_lvls = tuple(self.mtrees)[0]
@@ -85,7 +89,7 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
 
         else:
             for lvls, mtree in self.mtrees.items():
-                if mtree.match_levels(mtype):
+                if mtree.match_levels(mut):
                     mtree_lvls = lvls
                     break
 
@@ -95,10 +99,13 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
 
         return mtree_lvls
 
-    def mtrees_status(self, pheno, samps=None):
-        return self.mtrees[self.choose_mtree(pheno)].status(samps, pheno)
+    def get_pheno(self, mut, samps=None):
+        if not isinstance(mut, (MuType, MutComb)):
+            raise TypeError("Unrecognized class of phenotype `{}`!".format(
+                type(mut)))
 
-    def get_pheno(self, pheno, samps=None):
+        pheno_samps = mut.get_samples(self.mtrees)
+
         if samps is None:
             samps = sorted(self.get_samples())
 
@@ -106,27 +113,7 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
             raise ValueError("Cannot retrieve phenotypes for samples "
                              "not in this cohort!")
 
-        if isinstance(pheno, MuType):
-            stat_list = self.mtrees_status(pheno, samps)
-
-        elif isinstance(pheno, MutComb):
-            stat_list = [
-                all(phns) for phns in zip(*[self.mtrees_status(mtype, samps)
-                                            for mtype in pheno.mtypes])
-                ]
-
-            if pheno.not_mtype is not None:
-                stat_list = [
-                    phn and not nphn
-                    for phn, nphn in zip(
-                        stat_list, self.mtrees_status(pheno.not_mtype, samps))
-                    ]
-
-        else:
-            raise TypeError(
-                "Unrecognized class of phenotype `{}`!".format(type(pheno)))
-
-        return stat_list
+        return [s in pheno_samps for s in samps]
 
     def train_pheno(self, pheno, samps=None):
         """Gets the mutation status of samples in the training cohort.
@@ -263,8 +250,8 @@ class BaseCopyCohort(ValueCohort, UniCohort):
     """Base class for -omic datasets predicting continuous copy number scores.
 
     Args:
-        expr_mat (pandas.DataFrame, shape = [n_samps, n_features])
-        copy_mat (pandas.DataFrame, shape = [n_samps, n_features])
+        expr_mat (pd.DataFrame, shape = [n_samps, n_features])
+        copy_mat (pd.DataFrame, shape = [n_samps, n_features])
         cv_seed (int), optional: Seed used for random sampling.
         test_prop (float), optional: Proportion of cohort's samples that will
                                      be used for testing. Default is to not
