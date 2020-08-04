@@ -428,6 +428,7 @@ class MuTree(object):
     def __getitem__(self, key):
         """Gets a particular category of mutations at the current level."""
 
+        # is it wise/useful to allow keys to be lists?
         if not key:
             key_item = self
 
@@ -524,12 +525,11 @@ class MuTree(object):
 
     def get_levels(self):
         """Gets all the levels present in this tree and its children."""
-
         levels = {self.mut_level}
 
-        for _, mut in self:
-            if isinstance(mut, MuTree):
-                levels |= mut.get_levels()
+        for branch in self._child.values():
+            if isinstance(branch, MuTree):
+                levels |= branch.get_levels()
 
         return levels
 
@@ -538,11 +538,11 @@ class MuTree(object):
 
         samps = set()
 
-        for nm, mut in self:
-            if isinstance(mut, MuTree):
-                samps |= mut.get_samples()
-            elif isinstance(mut, dict):
-                samps |= set(mut)
+        for branch in self._child.values():
+            if isinstance(branch, MuTree):
+                samps |= branch.get_samples()
+            elif isinstance(branch, dict):
+                samps |= set(branch)
             else:
                 raise ValueError
 
@@ -717,7 +717,7 @@ class MuTree(object):
                 # for each level label specified by the mutation type that is
                 # also in the tree, check if there are enough samples in the
                 # corresponding tree branch to satisfy the query
-                for lbl in dict(self).keys() & mtype_dict.keys():
+                for lbl in self._child.keys() & mtype_dict.keys():
                     if len(self[lbl]) >= min_size:
 
                         # if we are at a leaf node of the mutation type or the
@@ -742,7 +742,7 @@ class MuTree(object):
             # if we are at one of the property levels specified in the query
             # but the levels of the mutation type and tree do not match...
             else:
-                for lbl, branch in self:
+                for lbl, branch in self._child.items():
                     if (isinstance(branch, MuTree)
                             and len(mtype.get_samples(branch)) >= min_size):
 
@@ -767,7 +767,7 @@ class MuTree(object):
 
                 # ...group together the identical sub-branches at deeper
                 # levels across branches that do satisfy the query
-                for lbl in dict(self).keys() & mtype_dict.keys():
+                for lbl in self._child.keys() & mtype_dict.keys():
                     rec_mtypes = self[lbl].branchtypes(
                         mtype_dict[lbl], sub_levels, min_size=1)
 
@@ -786,7 +786,7 @@ class MuTree(object):
             # specified in the query, recurse into each branch, only
             # considering those branches that could possibly satisfy the query
             else:
-                for lbl, branch in self:
+                for lbl, branch in self._child.items():
                     if (isinstance(branch, MuTree)
                             and set(sub_levels) & branch.get_levels()
                             and len(branch) >= min_size):
@@ -900,44 +900,23 @@ class MuTree(object):
 
         return use_mtypes
 
-    def status(self, samples, mtype=None):
-        """Finds if each sample has a mutation of this type in the tree.
-
-        Args:
-            samples (:obj:`list` of :obj:`str`)
-                Which samples' mutation status is to be retrieved.
-            mtype (MuType, optional)
-                A set of mutations whose membership we want to test.
-                The default is to check against any mutation
-                contained in the tree.
-
-        Returns:
-            stat_list (:obj:`list` of :obj:`bool`)
-                For each input sample, whether or not it has a mutation
-                in the given set.
-
-        """
-        if mtype is None:
-            samp_list = self.get_samples()
-        else:
-            samp_list = mtype.get_samples(self)
-
-        return [s in samp_list for s in samples]
-
     def match_levels(self, mtype):
         if self.mut_level == mtype.cur_level:
-            mtype_mtch = all(
-                False if not isinstance(muts, MuTree)
-                else muts.match_levels(tp)
-                for (nm, muts), (lbl, tp) in product(self,
-                                                     mtype.subtype_list())
-                if tp is not None and (nm == lbl or lbl not in self._child)
-                )
+            if all(tp is None for _, tp in mtype.child_iter()):
+                mtype_mtch = True
+
+            else:
+                mtype_mtch = all(
+                    any(branch.match_levels(tp)
+                        for branch in self._child.values()
+                        if isinstance(branch, MuTree))
+                    for _, tp in mtype.child_iter() if tp is not None
+                    )
 
         else:
-            mtype_mtch = any(muts.match_levels(mtype)
-                             for muts in self._child.values()
-                             if isinstance(muts, MuTree))
+            mtype_mtch = any(branch.match_levels(mtype)
+                             for branch in self._child.values()
+                             if isinstance(branch, MuTree))
 
         return mtype_mtch
 
