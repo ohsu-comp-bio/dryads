@@ -200,8 +200,10 @@ class MuType(object):
             sorted_levels = tuple([self.cur_level]
                                   + list(sorted(child_levels, key=len)[-1]))
 
-        else:
+        elif self.cur_level:
             sorted_levels = self.cur_level,
+        else:
+            sorted_levels = None
 
         return sorted_levels
 
@@ -600,34 +602,42 @@ class MuType(object):
 
         return MuType(new_key)
 
-    def get_samples(self, mtree):
+    def get_samples(self, *mtrees):
+        use_indx = 0
+
+        if len(mtrees) > 1:
+            for i, mtree in enumerate(mtrees):
+                if mtree.match_levels(self):
+                    use_indx = i
+                    break
+
+            else:
+                raise ValueError("No trees found in this collection whose "
+                                 "levels match `{}` !".format(self))
 
         # if this MuType has the same mutation level as the MuTree...
         samps = set()
-        if self.cur_level == mtree.mut_level:
+        if self.cur_level == mtrees[use_indx].mut_level:
+            tree_nms = {nm for nm, _ in mtrees[use_indx]}
 
             # ...find the mutation entries in the MuTree that match the
             # mutation entries in the MuType
-            for (nm, mut), (lbl, tp) in product(mtree, self.subtype_list()):
-                if lbl == nm:
+            for lbl, tp in self.subtype_list():
+                if lbl in tree_nms:
 
-                    if hasattr(mut, 'get_samples'):
-                        if tp is None:
-                            samps |= mut.get_samples()
-                        else:
-                            samps |= tp.get_samples(mut)
+                    if isinstance(mtrees[use_indx][lbl], dict):
+                        samps |= set(mtrees[use_indx][lbl])
 
-                    elif isinstance(mut, dict):
-                            samps |= set(mut)
-
+                    elif tp is None:
+                        samps |= mtrees[use_indx][lbl].get_samples()
                     else:
-                        raise ValueError
+                        samps |= tp.get_samples(mtrees[use_indx][lbl])
 
         else:
-            for _, mut in mtree:
-                if (hasattr(mut, 'get_levels')
-                        and mut.get_levels() & self.get_levels()):
-                    samps |= self.get_samples(mut)
+            for _, branch in mtrees[use_indx]:
+                if (not isinstance(branch, dict)
+                        and branch.match_levels(self)):
+                    samps |= self.get_samples(branch)
 
         return samps
 
@@ -733,22 +743,25 @@ class MutComb(object):
 
         # removes mutations that are covered by other given mutations
         mtypes = [mtype for mtype in mtypes if mtype is not None]
-        all_mtype = reduce(and_, mtypes)
+        intrx_mtype = reduce(and_, mtypes)
 
         if not_mtype is not None:
             mtypes = [mtype - not_mtype
                       if mtype.get_levels() == not_mtype.get_levels()
                       else mtype for mtype in mtypes]
 
-            if not_mtype.get_levels() == all_mtype.get_levels():
-                not_mtype -= all_mtype
+            if not_mtype.get_levels() == intrx_mtype.get_levels():
+                not_mtype -= intrx_mtype
+
+            if not_mtype.is_empty():
+                not_mtype = None
 
         # removes mutations that are covered by other given mutations
         mtypes = [mtype for mtype in mtypes if not mtype.is_empty()]
 
         # if only one unique mutation was given, return that mutation...
         if mtypes:
-            if len(mtypes) == 1 and (not_mtype is None or not_mtype.is_empty()):
+            if len(mtypes) == 1 and not_mtype is None:
                 return mtypes[0]
 
             # ...otherwise, return the combination of the given mutations
@@ -842,11 +855,12 @@ class MutComb(object):
         else:
             return self
 
-    def get_samples(self, mtree):
-        samps = self.mtype_apply(lambda mtype: mtype.get_samples(mtree), and_)
+    def get_samples(self, *mtrees):
+        samps = self.mtype_apply(
+            lambda mtype: mtype.get_samples(*mtrees), and_)
 
         if self.not_mtype is not None:
-            samps -= self.not_mtype.get_samples(mtree)
+            samps -= self.not_mtype.get_samples(*mtrees)
 
         return samps
 

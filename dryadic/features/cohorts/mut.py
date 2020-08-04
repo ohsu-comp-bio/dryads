@@ -104,7 +104,7 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
             raise TypeError("Unrecognized class of phenotype `{}`!".format(
                 type(mut)))
 
-        pheno_samps = mut.get_samples(self.mtrees)
+        pheno_samps = mut.get_samples(*self.mtrees.values())
 
         if samps is None:
             samps = sorted(self.get_samples())
