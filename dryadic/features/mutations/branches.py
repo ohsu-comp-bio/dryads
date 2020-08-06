@@ -223,14 +223,16 @@ class MuType(object):
 
     def child_iter(self):
         """Returns an iterator over the collapsed (labels):subtype pairs."""
-        return self._child.items()
+        return iter(self._child.items())
 
-    def subtype_list(self):
-        """Returns the list of all unique label:subtype pairs."""
-        return [(lbl, tp) for lbls, tp in self._child.items() for lbl in lbls]
+    def subtype_iter(self):
+        """Returns an iterator over all unique label:subtype pairs."""
+        return iter((lbl, tp) for lbls, tp in self._child.items()
+                    for lbl in lbls)
 
-    def get_labels(self):
-        return [lbl for lbls in self._child for lbl in lbls]
+    def label_iter(self):
+        """Returns an iterator over the unique labels at this level."""
+        return iter(lbl for lbls in self._child for lbl in lbls)
 
     def __len__(self):
         """Returns the number of unique category labels in the MuType.
@@ -247,7 +249,7 @@ class MuType(object):
                 2
 
         """
-        return len(self.subtype_list())
+        return len(tuple(self.label_iter()))
 
     def __eq__(self, other):
         """Checks if one MuType is equal to another."""
@@ -286,8 +288,8 @@ class MuType(object):
 
             # sort label:subtype pairs according to label such that pairwise
             # invariance is preserved
-            self_pairs = sorted(self.subtype_list(), key=lambda x: x[0])
-            other_pairs = sorted(other.subtype_list(), key=lambda x: x[0])
+            self_pairs = sorted(self.subtype_iter(), key=lambda x: x[0])
+            other_pairs = sorted(other.subtype_iter(), key=lambda x: x[0])
 
             # ...then compare how many (label:subtype) pairs they have...
             if len(self_pairs) == len(other_pairs):
@@ -362,7 +364,7 @@ class MuType(object):
 
         # iterate over all mutation types at this level separately
         # regardless of their children
-        for lbl, tp in self.subtype_list():
+        for lbl, tp in self.subtype_iter():
             new_str += self.cur_level + ' IS ' + lbl
 
             if tp is not None:
@@ -408,7 +410,7 @@ class MuType(object):
         # levels further down if they exist
         else:
             new_str += "({} {}s)".format(
-                len(self.subtype_list()), self.cur_level.lower())
+                self.__len__(), self.cur_level.lower())
 
             # condense sub-types at the further levels
             for lbls, tp in self_iter:
@@ -434,8 +436,8 @@ class MuType(object):
             return self
 
         # gets the unique label:subtype pairs in each MuType
-        self_dict = dict(self.subtype_list())
-        other_dict = dict(other.subtype_list())
+        self_dict = dict(self.subtype_iter())
+        other_dict = dict(other.subtype_iter())
 
         if self.cur_level == other.cur_level:
             new_key = {}
@@ -475,8 +477,8 @@ class MuType(object):
             return MuType({})
 
         # gets the unique label:subtype pairs in each MuType
-        self_dict = dict(self.subtype_list())
-        other_dict = dict(other.subtype_list())
+        self_dict = dict(self.subtype_iter())
+        other_dict = dict(other.subtype_iter())
 
         new_key = {}
         if self.cur_level == other.cur_level:
@@ -542,8 +544,8 @@ class MuType(object):
             return True
 
         # gets the unique label:subtype pairs in each MuType
-        self_dict = dict(self.subtype_list())
-        other_dict = dict(other.subtype_list())
+        self_dict = dict(self.subtype_iter())
+        other_dict = dict(other.subtype_iter())
 
         # a MuType cannot be a supertype of another MuType unless they are on
         # the same mutation property level and its category labels are a
@@ -576,8 +578,8 @@ class MuType(object):
             return self
 
         # gets the unique label:subtype pairs in each MuType
-        self_dict = dict(self.subtype_list())
-        other_dict = dict(other.subtype_list())
+        self_dict = dict(self.subtype_iter())
+        other_dict = dict(other.subtype_iter())
 
         if self.cur_level == other.cur_level:
             new_key = {(self.cur_level, lbl): self_dict[lbl]
@@ -603,8 +605,16 @@ class MuType(object):
         return MuType(new_key)
 
     def get_samples(self, *mtrees):
+        """Finds the samples carrying this mutation in a collection of trees.
+
+        Returns:
+             samps (set)
+
+        """
         use_indx = 0
 
+        # if more than one mutation tree is given, find the first tree that
+        # has all of the annotation levels contained in this mutation type
         if len(mtrees) > 1:
             for i, mtree in enumerate(mtrees):
                 if mtree.match_levels(self):
@@ -622,12 +632,22 @@ class MuType(object):
 
             # ...find the mutation entries in the MuTree that match the
             # mutation entries in the MuType
-            for lbl, tp in self.subtype_list():
+            for lbl, tp in self.subtype_iter():
                 if lbl in tree_nms:
 
+                    # if both the subtype and the subtree for this entry are
+                    # leaf nodes, add the samples on tree leaf...
                     if isinstance(mtrees[use_indx][lbl], dict):
-                        samps |= set(mtrees[use_indx][lbl])
+                        if tp is None:
+                            samps |= set(mtrees[use_indx][lbl])
 
+                        else:
+                            raise ValueError(
+                                "The given tree cannot be used to retrieve "
+                                "samples for `{}` !".format(tp)
+                                )
+
+                    # ...otherwise, recurse farther down the tree
                     elif tp is None:
                         samps |= mtrees[use_indx][lbl].get_samples()
                     else:
@@ -645,7 +665,7 @@ class MuType(object):
         ant_dict = dict()
 
         if self.cur_level == mtree.mut_level:
-            for (nm, mut), (lbl, tp) in product(mtree, self.subtype_list()):
+            for (nm, mut), (lbl, tp) in product(mtree, self.subtype_iter()):
                 if lbl == nm:
 
                     if hasattr(mut, 'get_samples'):
@@ -701,8 +721,7 @@ class MuType(object):
             inv_mtype (MuType)
 
         """
-        #TODO: implement this in MuTrees
-        return mtree.get_diff(MuType(mtree.allkey()), self)
+        return MuType(mtree.allkey()) - self
 
     def subkeys(self):
         """Gets all of the possible subsets of this MuType that contain
@@ -787,7 +806,6 @@ class MutComb(object):
             eq &= self.not_mtype == other.not_mtype
 
         return eq
-
 
     def mtype_apply(self, each_fx, comb_fx):
         each_list = [each_fx(mtype) for mtype in self.mtypes]

@@ -220,7 +220,7 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
                                  "a mutation type not representing a "
                                  "subgrouping of a gene or set of genes!")
 
-            cur_genes = mtype.get_labels()
+            cur_genes = mtype.label_iter()
 
         elif cur_genes is None:
             raise ValueError("One of `mtype` or `cur_genes` has to be "

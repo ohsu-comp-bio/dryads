@@ -707,7 +707,7 @@ class MuTree(object):
         if mtype is None:
             mtype_dict = {lbl: None for lbl in dict(self)}
         else:
-            mtype_dict = dict(mtype.subtype_list())
+            mtype_dict = dict(mtype.subtype_iter())
 
         # check if we are at one of the property levels specified in the
         # query and if this level is also that of the given mutation type
