@@ -1,21 +1,44 @@
 
-"""Unit tests for abstract representations of mutation sub-types.
+"""
+Unit tests for abstract representations of mutation sub-types.
 
 See Also:
     :class:`..features.mutations.MuType`: The class tested herein.
 
 Author: Michal Grzadkowski <grzadkow@ohsu.edu>
-
 """
 
+import pytest
 from ..features.mutations import MuType
 from .resources import mutypes
-import pytest
+from ..utils import powerset_slice
 
 from functools import reduce
 from operator import or_, and_, add
 from itertools import combinations as combn
 from itertools import product
+
+
+def generate_mkeys(lvl_lbls, use_none=False):
+    if not lvl_lbls:
+        mkeys = [None]
+
+    else:
+        cur_lvl, cur_lbls = lvl_lbls[0]
+        sub_keys = generate_mkeys(lvl_lbls[1:], True)
+
+        if use_none:
+            mkeys = [None]
+        else:
+            mkeys = [{}]
+
+        for lbl_list in powerset_slice(cur_lbls, start=1):
+            mkeys += [
+                {(cur_lvl, lbl): k for lbl, k in zip(lbl_list, lbl_keys)}
+                for lbl_keys in product(sub_keys, repeat=len(lbl_list))
+                ]
+
+    return mkeys
 
 
 def pytest_generate_tests(metafunc):
@@ -25,22 +48,17 @@ def pytest_generate_tests(metafunc):
     elif metafunc.function.__code__.co_argcount == 2:
         if hasattr(metafunc.cls, 'params'):
             if isinstance(metafunc.cls.params, dict):
-                funcarglist = metafunc.cls.params[metafunc.function.__name__]
+                funcarg = metafunc.cls.params[metafunc.function.__name__]
 
             else:
-                funcarglist = metafunc.cls.params
+                funcarg = metafunc.cls.params
 
         else:
-            funcarglist = 'ALL'
-
-        if isinstance(funcarglist, str):
-            funcarglist = [funcarglist]
+            funcarg = 'ALL'
 
         if metafunc.function.__code__.co_varnames[1] == 'mtypes':
-            metafunc.parametrize(
-                'mtypes', [mtype_tester(funcarg) for funcarg in funcarglist],
-                ids=[funcarg.replace('_', '+') for funcarg in funcarglist]
-                )
+            mtypes, id_str = mtype_generator(funcarg)
+            metafunc.parametrize('mtypes', [mtypes], ids=[id_str])
 
         else:
             raise ValueError("Unrecognized singleton argument "
@@ -51,43 +69,61 @@ def pytest_generate_tests(metafunc):
         raise ValueError("MuType unit tests take at most one argument!")
 
 
-def mtype_tester(mtypes_param):
-    if mtypes_param == 'ALL':
-        mtypes = reduce(
-            add, [tps for _, tps in vars(mutypes).items()
-                  if isinstance(tps, tuple) and isinstance(tps[0], MuType)]
-            )
+def mtype_generator(mtypes_param):
+    if isinstance(mtypes_param, str):
+        if mtypes_param == 'ALL':
+            mtypes = reduce(add, [tps for _, tps in vars(mutypes).items()
+                                  if isinstance(tps, tuple)])
+            id_str = 'all labeled sets'
 
-    elif '_' in mtypes_param:
-        mtypes = reduce(add, [eval('mutypes.{}'.format(mtypes))
-                              for mtypes in mtypes_param.split('_')])
+        elif '_' in mtypes_param:
+            mtypes = reduce(add, [eval('mutypes.{}'.format(mtypes))
+                                  for mtypes in mtypes_param.split('_')])
+            id_str = mtypes_param.replace('_', '+')
+
+        else:
+            mtypes = eval('mutypes.{}'.format(mtypes_param))
+            id_str = mtypes_param
+
+    elif isinstance(mtypes_param, list):
+        mtypes = [MuType(mkey) for mkey in generate_mkeys(mtypes_param)]
+
+        lvls_list, lbls_list = zip(*mtypes_param)
+        id_str = ' '.join(['x'.join([str(len(lbls)) for lbls in lbls_list]),
+                           "({})".format(','.join(lvls_list))])
 
     else:
-        mtypes = eval('mutypes.{}'.format(mtypes_param))
+        raise TypeError("Unrecognized mutation type identifier "
+                        "`{}` !".format(mtypes_param))
 
-    return mtypes
+    return mtypes, id_str
 
 
 class TestCaseInit(object):
     """Tests for proper instatiation of MuTypes from type dictionaries."""
 
-    params = {'test_child': 'basic', 'test_levels': 'basic',
-              'test_synonyms': 'synonyms', 'test_state': 'ALL'}
-
-    def test_child(self, mtypes):
+    def test_child(self):
         """Is the child attribute of a MuType properly created?"""
 
-        assert mtypes[0]._child == {frozenset(['TP53']): None}
-        assert mtypes[1]._child == {frozenset(['TP53', 'KRAS']): None}
-        assert mtypes[2]._child == {
-            frozenset(['TP53']): MuType({('Form', 'Frame'): None})}
+        assert (MuType({('Gene', 'TP53'): None})._child
+                == {frozenset(['TP53']): None})
+        assert (MuType({('Gene', 'TP53'): {('Form', 'Frame'): None}})._child
+                == {frozenset(['TP53']): MuType({('Form', 'Frame'): None})})
 
-        assert mtypes[3]._child == {
-            frozenset(['TP53']): MuType({('Form', 'Point'): None}),
-            frozenset(['KRAS']): MuType({('Form', 'Frame'): None})
-            }
-        assert mtypes[4]._child == {
-            frozenset(['TP53', 'KRAS']): MuType({('Form', 'InDel'): None})}
+        assert (MuType({('Gene', ('TP53', )): None})._child
+                == {frozenset(['TP53']): None})
+        assert (MuType({('Gene', ('TP53', 'KRAS')): None})._child
+                == {frozenset(['TP53', 'KRAS']): None})
+
+        assert (MuType({('Gene', 'TP53'): {('Form', 'Point'): None},
+                        ('Gene', 'KRAS'): {('Form', 'Frame'): None}})._child
+                == {frozenset(['TP53']): MuType({('Form', 'Point'): None}),
+                    frozenset(['KRAS']): MuType({('Form', 'Frame'): None})})
+
+        assert (MuType({('Gene', 'TP53'): {('Form', 'InDel'): None},
+                        ('Gene', 'KRAS'): {('Form', 'InDel'): None}})._child
+                == {frozenset(['TP53', 'KRAS']): MuType({
+                    ('Form', 'InDel'): None})})
 
     def test_empty(self):
         """Can we correctly instantiate an empty MuType?"""
@@ -97,40 +133,61 @@ class TestCaseInit(object):
         assert MuType([]).is_empty()
         assert MuType(()).is_empty()
 
-    def test_levels(self, mtypes):
+    def test_levels(self):
         """Do mutations store mutation annotation levels correctly?"""
 
-        assert all(mtype.cur_level == 'Gene' for mtype in mtypes)
-        assert mtypes[0].get_levels() == {'Gene'}
-        assert mtypes[1].get_levels() == {'Gene'}
+        for gene_lbls in powerset_slice(['TP53', 'KRAS', 'BRAF'], start=1):
+            mtype = MuType({('Gene', gene_lbls): None})
+            assert mtype.cur_level == 'Gene'
+            assert mtype.get_levels() == {'Gene'}
 
-        assert mtypes[2].get_levels() == {'Gene', 'Form'}
-        assert mtypes[3].get_levels() == {'Gene', 'Form'}
-        assert mtypes[4].get_levels() == {'Gene', 'Form'}
+            for form_lbls in powerset_slice(['missense', 'nonsense'],
+                                            start=1):
+                mtype = MuType({('Gene', gene_lbls): {(
+                    'Form', form_lbls): None}})
 
-    def test_synonyms(self, mtypes):
-        for mtype1, mtype2 in zip(mtypes[0::2], mtypes[1::2]):
-            assert mtype1._child == mtype2._child
+                assert mtype.cur_level == 'Gene'
+                assert mtype.get_levels() == {'Gene', 'Form'}
 
-    def test_state(self, mtypes):
-        for mtype in mtypes:
-            assert mtype == MuType(mtype.__getstate__())
+    def test_synonyms(self):
+        assert (MuType({('Gene', ('TP53', 'KRAS')): None})._child
+                == MuType({('Gene', 'TP53'): None,
+                           ('Gene', 'KRAS'): None})._child)
+
+        assert (MuType({('Gene', 'TP53'): {('Form', 'Frame'): None},
+                        ('Gene', 'KRAS'): {('Form', 'Frame'): None}})._child
+                == MuType({('Gene', ('TP53', 'KRAS')): {
+                    ('Form', 'Frame'): None}})._child)
+
+        assert (MuType({('Gene', 'TP53'): {('Form',
+                                            ('Point', 'Frame')): None},
+                        ('Gene', 'KRAS'): {
+                            ('Form', ('Frame', 'Point')): None}})._child
+                == MuType({('Gene', 'TP53'): {('Form', 'Frame'): None},
+                           ('Gene', 'KRAS'): {('Form', 'Frame'): None},
+                           ('Gene', ('TP53', 'KRAS')): {
+                               ('Form', 'Point'): None}})._child)
+
+        assert (MuType({('Gene', ('TP53', 'KRAS', 'BRAF')): None})._child
+                == MuType({('Gene', ('BRAF', 'TP53', 'KRAS')): None})._child)
 
 
 class TestCaseBasic:
     """Tests for basic functionality of MuTypes."""
 
-    params = 'ALL'
+    params = [('Gene', ('KRAS', 'TP53')),
+              ('Exon', ('7th', )),
+              ('Form', ('missense', 'nonsense', 'frameshift'))]
 
     def test_hash(self, mtypes):
         """Can we get proper hash values of MuTypes?"""
-        for mtype1, mtype2 in product(mtypes, repeat=2):
-            assert (mtype1 == mtype2) == (hash(mtype1) == hash(mtype2))
+        for mtype1, mtype2 in combn(mtypes, 2):
+            if mtype1 == mtype2:
+                assert hash(mtype1) == hash(mtype2)
 
     def test_equality(self, mtypes):
-        for mtype1, mtype2 in product(mtypes, repeat=2):
-            if (mtype1._child == mtype2._child):
-                assert mtype1 == mtype2
+        for mtype1, mtype2 in combn(mtypes, 2):
+            assert (mtype1._child == mtype2._child) == (mtype1 == mtype2)
 
     def test_print(self, mtypes):
         """Can we print MuTypes?"""
@@ -152,33 +209,42 @@ class TestCaseBasic:
             key_mtypes = [MuType(k) for k in mtype.subkeys()]
 
             assert len(set(key_mtypes)) == len(key_mtypes)
-            assert reduce(or_, key_mtypes) == mtype
+            assert reduce(or_, key_mtypes, MuType({})) == mtype
             assert (sum(len(key_mtype.subkeys()) for key_mtype in key_mtypes)
                     == len(mtype.subkeys()))
 
             if len(key_mtypes) > 1:
                 assert reduce(and_, key_mtypes).is_empty()
 
-        for mtype1, mtype2 in product(mtypes, repeat=2):
+        for mtype1, mtype2 in combn(mtypes, 2):
             assert ((sorted(MuType(k) for k in mtype1.subkeys())
                      == sorted(MuType(k) for k in mtype2.subkeys()))
                     == (mtype1 == mtype2))
+
+    def test_state(self, mtypes):
+        for mtype in mtypes:
+            assert mtype == MuType(mtype.__getstate__())
 
 
 class TestCaseIter:
     """Tests for iterating over the elements of MuTypes."""
 
-    params = {'test_iter': 'ALL', 'test_len': ['basic_synonyms']}
+    params = {
+        'test_iter': [('Gene', ('TP53', )),
+                      ('Exon', ('3rd', '7th', '2nd', '4th', '1st')),
+                      ('Form', ('missense', 'nonsense', 'frameshift'))],
+        'test_len': 'small'
+        }
 
     def test_iter(self, mtypes):
         """Can we iterate over the sub-types in a MuType?"""
         for mtype in mtypes:
-            assert (len(mtype.subkeys()) >= len(mtype.subtype_list())
-                    >= len(list(mtype.child_iter())))
+            assert (len(mtype.subkeys()) >= len(tuple(mtype.subtype_iter()))
+                    >= len(tuple(mtype.child_iter())))
 
     def test_len(self, mtypes):
         assert ([len(mtype) for mtype in mtypes]
-                == [1, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3])
+                == [1, 1, 1, 1, 2, 2, 1, 3, 1, 1])
 
 
 class TestCaseSorting:
@@ -213,12 +279,18 @@ class TestCaseSorting:
 class TestCaseBinary:
     """Tests the binary operators defined for MuTypes."""
 
-    params = {'test_comparison': 'ALL',
-              'test_invariants': 'ALL',
-              'test_or_easy': 'small',
-              'test_or_hard': 'binary',
-              'test_and': 'small',
-              'test_sub': 'binary'}
+    params = {
+        'test_comparison': [('Gene', ('TP53', 'PIK3CA')),
+                            ('Exon', ('3rd', '6th')),
+                            ('Form', ('nonsense', ))],
+        'test_invariants': [('Gene', ('TP53', 'PIK3CA')),
+                            ('Exon', ('3rd', )),
+                            ('Form', ('nonsense', 'frameshift', 'missense'))],
+        'test_or_easy': 'small',
+        'test_or_hard': 'binary',
+        'test_and': 'small',
+        'test_sub': 'binary'
+        }
 
     def test_comparison(self, mtypes):
         """Are rich comparison operators correctly implemented for MuTypes?"""
@@ -231,6 +303,7 @@ class TestCaseBinary:
             assert not mtype > mtype
 
         for mtype1, mtype2 in combn(mtypes, 2):
+            assert (mtype1 == mtype2) == (mtype2 == mtype1)
             assert (mtype1 <= mtype2) != (mtype1 > mtype2)
 
             if mtype1 < mtype2:
@@ -249,7 +322,6 @@ class TestCaseBinary:
             assert (mtype - mtype).is_empty()
 
         for mtype1, mtype2 in combn(mtypes, 2):
-
             if mtype1.get_levels() == mtype2.get_levels():
                 assert mtype1 | mtype2 == mtype2 | mtype1
                 assert mtype1 & mtype2 == mtype2 & mtype1
