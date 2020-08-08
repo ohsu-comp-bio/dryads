@@ -8,10 +8,10 @@ Author: Michal Grzadkowski <grzadkow@ohsu.edu>
 
 """
 
-from ..features.mutations import MuType, MuTree
-from .test_mtypes import mtype_tester
-from .test_cohorts import load_muts
 import pytest
+from ..features.mutations import MuType, MuTree
+from .test_mtypes import mtype_generator
+from .test_cohorts import load_muts
 
 import pandas as pd
 from itertools import product, chain
@@ -19,126 +19,149 @@ from itertools import combinations as combn
 
 
 def pytest_generate_tests(metafunc):
+    funcargdict = {param_key: None
+                   for param_key in ('muts', 'mut_lvls', 'mtypes')}
+
     if metafunc.function.__code__.co_argcount == 1:
         pass
 
-    if metafunc.function.__code__.co_argcount >= 2:
+    elif metafunc.function.__code__.co_argcount >= 2:
         if hasattr(metafunc.cls, 'params'):
-            if isinstance(metafunc.cls.params, dict):
-                funcarglist = metafunc.cls.params[metafunc.function.__name__]
+            if not isinstance(metafunc.cls.params, dict):
+                raise ValueError("Testing case parameters must be given "
+                                 "as a dictionary!")
 
-            else:
-                funcarglist = metafunc.cls.params
+            for param_key in funcargdict:
+                if param_key in metafunc.cls.params:
+                    funcargdict[param_key] = metafunc.cls.params[param_key]
+
+            if metafunc.function.__name__ in metafunc.cls.params:
+                func_params = metafunc.cls.params[metafunc.function.__name__]
+
+                for param_key in funcargdict:
+                    if param_key in func_params:
+                        funcargdict[param_key] = func_params[param_key]
 
         else:
-            funcarglist = 'ALL'
+            raise ValueError(
+                "No testing parameters defined for `{}` !".format(metafunc))
 
-        if isinstance(funcarglist, str):
-            funcarglist = [funcarglist]
-    
+    if not funcargdict['muts']:
+        raise ValueError("Every test must load a set of mutations!")
+
+    mut_dfs = {muts_lbl: load_muts(muts_lbl)
+               for muts_lbl in funcargdict['muts']}
+
     if metafunc.function.__code__.co_argcount == 2:
         if metafunc.function.__code__.co_varnames[1] == 'mtree':
             metafunc.parametrize(
-                'mtree', [mtree_tester(funcarg) for funcarg in funcarglist],
-                ids=[funcarg.replace('_', '+') for funcarg in funcarglist]
+                'mtree',
+                [mtree_generator(mut_df) for mut_df in mut_dfs.values()],
+                ids=mut_dfs.keys()
+                )
+
+        else:
+            raise ValueError("Unrecognized singleton argument `{}` !".format(
+                metafunc.function.__code__.co_varnames[1]))
+
+    elif metafunc.function.__code__.co_argcount == 3:
+        if metafunc.function.__code__.co_varnames[2] == 'mtree':
+            metafunc.parametrize(
+                'muts, mtree',
+                [(mut_df, mtree_generator(mut_df))
+                 for mut_df in mut_dfs.values()],
+                ids=mut_dfs.keys()
+                )
+
+        elif metafunc.function.__code__.co_varnames[2] == 'mut_lvls':
+            metafunc.parametrize(
+                'mtree, mut_lvls',
+                [(mtree_generator(mut_df, mut_lvls), mut_lvls)
+                 for mut_df, mut_lvls in product(mut_dfs.values(),
+                                                 funcargdict['mut_lvls'])],
+                ids=["{} ({})".format(mut_k, '_'.join(mut_lvls))
+                     for mut_k, mut_lvls in product(mut_dfs.keys(),
+                                                    funcargdict['mut_lvls'])]
+                )
+
+        elif metafunc.function.__code__.co_varnames[2] == 'mtypes':
+            mtype_list = [mtype_generator(mtype_lbl)
+                          for mtype_lbl in funcargdict['mtypes']]
+
+            metafunc.parametrize(
+                'mtree, mtypes',
+                [(mtree_generator(mut_df), mtypes)
+                 for mut_df, (mtypes, _) in product(mut_dfs.values(),
+                                                    mtype_list)],
+                ids=["{} with <{}> muts".format(mut_k, mtypes_k)
+                     for mut_k, (_, mtypes_k) in product(mut_dfs.keys(),
+                                                         mtype_list)]
                 )
 
         else:
             raise ValueError
 
-    elif metafunc.function.__code__.co_argcount == 3:
-        if metafunc.function.__code__.co_varnames[2] == 'mtree':
-            muts = {lbl: load_muts(lbl) for lbl in funcarglist}
+    elif metafunc.function.__code__.co_argcount == 4:
+        if 'mtypes' in metafunc.function.__code__.co_varnames:
+            mtype_list = [mtype_generator(mtype_lbl)
+                          for mtype_lbl in funcargdict['mtypes']]
 
-            metafunc.parametrize('muts, mtree',
-                                 [(muts[funcarg], mtree_tester(muts[funcarg]))
-                                  for funcarg in funcarglist],
-                                 ids=funcarglist)
-
-        elif metafunc.function.__code__.co_varnames[2] == 'mtypes':
             metafunc.parametrize(
-                'mtree, mtypes',
-                [(mtype_tester(funcarg1), mtree_tester(funcarg2))
-                 for funcarg1, funcarg2 in product(*funcarglist)],
-                ids=['x'.join([funcarg1, funcarg2])
-                     for funcarg1, funcarg2 in product(*funcarglist)]
+                'mtree, mut_lvls, mtypes',
+                [(mtree_generator(mut_df, mut_lvls), mut_lvls, mtypes)
+                 for mut_df, (mut_lvls, (mtypes, _))
+                 in product(mut_dfs.values(), zip(funcargdict['mut_lvls'],
+                                                  mtype_list))],
+                ids=["{} ({}) with <{}> muts".format(mut_k,
+                                                     '_'.join(mut_lvls),
+                                                     mtypes_k)
+                     for mut_k, (mut_lvls, (_, mtypes_k))
+                     in product(mut_dfs.keys(), zip(funcargdict['mut_lvls'],
+                                                    mtype_list))]
                 )
 
-        elif metafunc.function.__code__.co_varnames[2] == 'mut_lvls':
-            if len(funcarglist) == 2 and len(funcarglist[0]) > 1:
-                metafunc.parametrize(
-                    'mtree, mut_lvls',
-                    [(mtree_tester(mut_str, mut_lvls), mut_lvls)
-                     for mut_str, mut_lvls in product(*funcarglist)],
-                    ids=["{}<{}>".format(mut_str, mut_lvls)
-                         for mut_str, mut_lvls in product(*funcarglist)]
-                    )
-
-            else:
-                metafunc.parametrize(
-                    'mtree, mut_lvls',
-                    [(mtree_tester(mut_str, mut_lvls), mut_lvls)
-                     for mut_str, mut_lvls in funcarglist],
-                    ids=["{}: <{}>".format(mut_str, mut_lvls)
-                         for mut_str, mut_lvls in funcarglist]
-                    )
-
         else:
-            raise ValueErorr
-
-    elif metafunc.function.__code__.co_argcount == 4:
-        if metafunc.function.__code__.co_varnames[3] == 'mut_lvls':
-            if len(funcarglist) == 2 and len(funcarglist[0]) > 1:
-                muts = {mut_str: load_muts(mut_str)
-                        for mut_str in funcarglist[0]}
-
-                metafunc.parametrize(
-                    'muts, mtree, mut_lvls',
-                    [(muts[mut_str],
-                      mtree_tester(muts[mut_str], mut_lvls), mut_lvls)
-                     for mut_str, mut_lvls in product(*funcarglist)],
-                    ids=["{}: <{}>".format(mut_str, mut_lvls)
-                         for mut_str, mut_lvls in product(*funcarglist)]
-                    )
-
-            else:
-                muts = {mut_str: load_muts(mut_str)
-                        for mut_str, _ in funcarglist}
-
-                metafunc.parametrize(
-                    'muts, mtree, mut_lvls',
-                    [(muts[mut_str],
-                      mtree_tester(muts[mut_str], mut_lvls), mut_lvls)
-                     for mut_str, mut_lvls in funcarglist],
-                    ids=["{}: <{}>".format(mut_str, mut_lvls)
-                         for mut_str, mut_lvls in funcarglist]
-                    )
+            metafunc.parametrize(
+                'muts, mtree, mut_lvls',
+                [(mut_df, mtree_generator(mut_df, mut_lvls), mut_lvls)
+                 for mut_df, mut_lvls in product(mut_dfs.values(),
+                                                 funcargdict['mut_lvls'])],
+                ids=["{} ({})".format(mut_k, '_'.join(mut_lvls))
+                     for mut_k, mut_lvls in product(mut_dfs.keys(),
+                                                    funcargdict['mut_lvls'])]
+                )
 
     elif metafunc.function.__code__.co_argcount == 5:
-        muts = {mut_str: load_muts(mut_str) for mut_str, _ in funcarglist[0]}
+        mtype_list = [mtype_generator(mtype_lbl)
+                      for mtype_lbl in funcargdict['mtypes']]
 
         metafunc.parametrize(
-            'muts, mtree, mtypes, mut_lvls',
-            [(muts[mut_str], mtree_tester(muts[mut_str], levels=mut_lvls),
-              mtype_tester(mtype_str), mut_lvls)
-             for (mut_str, mtype_str), mut_lvls in product(*funcarglist)],
-            ids=["{} & {} : <{}>".format(mut_str, mtype_str, mut_lvls)
-                 for (mut_str, mtype_str), mut_lvls in product(*funcarglist)]
+            'muts, mtree, mut_lvls, mtypes',
+            [(mut_df, mtree_generator(mut_df, mut_lvls), mut_lvls, mtypes)
+             for mut_df, (mut_lvls, (mtypes, _))
+             in product(mut_dfs.values(), zip(funcargdict['mut_lvls'],
+                                              mtype_list))],
+            ids=["{} ({}) with <{}> muts".format(mut_k, '_'.join(mut_lvls),
+                                                 mtypes_k)
+                 for mut_k, (mut_lvls, (_, mtypes_k))
+                 in product(mut_dfs.keys(), zip(funcargdict['mut_lvls'],
+                                                mtype_list))]
             )
 
     else:
         raise ValueError
 
 
-def mtree_tester(muts_param, levels=('Gene', 'Form')):
-    if isinstance(muts_param, str):
-        mtree = MuTree(load_muts(muts_param), levels=levels)
-    elif hasattr(muts_param, 'shape'):
-        mtree = MuTree(muts_param, levels=levels)
+def mtree_generator(mut_df, mut_lvls=None):
+    if mut_lvls is None:
+        mut_lvls = ('Gene', 'Form')
+
+    if isinstance(mut_lvls, (list, tuple)):
+        mtree = MuTree(mut_df, levels=mut_lvls)
 
     else:
-        raise ValueError("Unrecognized type of mutation tree "
-                         "parameter `{}` !".format(muts_param))
+        raise TypeError("Unrecognized mutation tree level identifier "
+                        "`{}` !".format(mut_lvls))
 
     return mtree
 
@@ -146,11 +169,11 @@ def mtree_tester(muts_param, levels=('Gene', 'Form')):
 class TestCaseInit(object):
     """Tests for basic functionality of MuTrees."""
 
-    params = [
-        ['small', 'medium'],
-        [('Gene', ), ('Form', ), ('Form', 'Exon'), ('Gene', 'Protein'),
-         ('Gene', 'Form', 'Protein')]
-        ]
+    params = {
+        'muts': ['small', 'medium'],
+        'mut_lvls': [('Gene', ), ('Form', ), ('Form', 'Exon'),
+                     ('Gene', 'Protein'), ('Gene', 'Form', 'Protein')]
+        }
 
     def test_levels(self, mtree, mut_lvls):
         """Does the tree correctly implement nesting of mutation levels?"""
@@ -250,18 +273,14 @@ class TestCaseMuTypeSamples(object):
     """Tests for using MuTypes to access samples in MuTrees."""
 
     params = {
-        'test_small': [
-            [('small', 'small'), ],
-            [('Gene', 'Form', 'Exon'), ]
-            ],
-        'test_medium': [
-            [('medium', 'small'), ],
-            [('Gene', 'Form', 'Exon'), ('Gene', 'Form', 'Protein')]
-            ],
-        'test_status': [
-            [('small', 'small'), ('medium', 'small'), ],
-            [('Gene', 'Form', 'Exon'), ('Gene', 'Form', 'Protein')]
-            ],
+        'test_small': {'muts': ['small'],
+                       'mut_lvls': [('Gene', 'Form', 'Exon')],
+                       'mtypes': ['small']},
+
+        'test_medium': {'muts': ['medium'],
+                        'mut_lvls': [('Gene', 'Form', 'Exon'),
+                                     ('Gene', 'Form', 'Protein')],
+                        'mtypes': ['small']},
         }
 
     def test_small(self, muts, mtree, mtypes, mut_lvls):
@@ -308,31 +327,14 @@ class TestCaseMuTypeSamples(object):
             assert (MuType({('Form', (frm1, frm2)): None}).get_samples(mtree)
                     == set(muts.Sample[muts.Form.isin([frm1, frm2])]))
 
-    def test_status(self, muts, mtree, mtypes, mut_lvls):
-        """Can we get a vector of mutation status from a MuTree?"""
-        for mtype in mtypes:
-            assert (mtree.status(['herpderp', 'derpherp'], mtype)
-                    == [False, False])
-
-        samp_lists = [pd.Series(tuple(set(muts.Sample))),
-                      pd.Series(tuple(set(muts.Sample[::-2]))),
-                      pd.Series(tuple(set(muts.Sample[2:7]))),]
-
-        for samp_list in samp_lists:
-            for mtype in mtypes:
-                assert (mtree.status(samp_list, mtype)
-                        == samp_list.isin(mtype.get_samples(mtree))).all()
-
 
 class TestCaseCustomLevels(object):
     """Tests for custom mutation levels."""
 
     params = {
-        'test_base': [
-            ['medium', 'big'],
-            [('Gene', 'Form_base'), ('Gene', 'Form_base', 'Exon'),
-             ('Form_base', 'Protein')]
-            ],
+        'muts': ['medium', 'big'],
+        'mut_lvls': [('Gene', 'Form_base'), ('Gene', 'Form_base', 'Exon'),
+                     ('Form_base', 'Protein')]
         }
 
     def test_base(self, muts, mtree, mut_lvls):

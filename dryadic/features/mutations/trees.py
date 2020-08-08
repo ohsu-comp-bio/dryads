@@ -471,10 +471,10 @@ class MuTree(object):
 
             # if we have reached a root node, print the samples
             elif len(mut) > 8:
-                    new_str += ': ({} samples)'.format(str(len(mut)))
+                new_str += ': ({} samples)'.format(len(mut))
             else:
-                    new_str += ': {}'.format(
-                        reduce(lambda x, y: '{},{}'.format(x, y), mut))
+                new_str += ': {}'.format(
+                    reduce(lambda x, y: '{},{}'.format(x, y), mut))
 
             new_str += ('\n' + '\t' * self.depth)
         new_str = gsub('\n$', '', new_str)
@@ -713,7 +713,10 @@ class MuTree(object):
                 # also in the tree, check if there are enough samples in the
                 # corresponding tree branch to satisfy the query
                 for lbl in self._child.keys() & mtype_dict.keys():
-                    if len(self[lbl]) >= min_size:
+                    if ((isinstance(self[lbl], dict)
+                         and len(self[lbl]) >= min_size)
+                        or (not isinstance(self[lbl], dict)
+                            and len(self[lbl].get_samples()) >= min_size)):
 
                         # if we are at a leaf node of the mutation type or the
                         # tree, or if there are no further property levels to
@@ -784,7 +787,7 @@ class MuTree(object):
                 for lbl, branch in self._child.items():
                     if (isinstance(branch, MuTree)
                             and set(sub_levels) & branch.get_levels()
-                            and len(branch) >= min_size):
+                            and len(branch.get_samples()) >= min_size):
 
                         sub_mtypes.update(
                             branch.branchtypes(mtype, sub_levels, min_size))
