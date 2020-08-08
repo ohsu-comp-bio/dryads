@@ -203,22 +203,27 @@ class TestCaseBasic:
             else:
                 assert repr(mtype1) != repr(mtype2)
 
-    def test_subkeys(self, mtypes):
+    def test_leaves(self, mtypes):
         """Can we get the leaf types stored in a MuType?"""
         for mtype in mtypes:
-            key_mtypes = [MuType(k) for k in mtype.subkeys()]
+            leaf_mtypes = [MuType(k) for k in mtype.leaves()]
 
-            assert len(set(key_mtypes)) == len(key_mtypes)
-            assert reduce(or_, key_mtypes, MuType({})) == mtype
-            assert (sum(len(key_mtype.subkeys()) for key_mtype in key_mtypes)
-                    == len(mtype.subkeys()))
+            assert all(len(leaf_mtype.leaves()) == 1
+                       for leaf_mtype in leaf_mtypes)
+            assert len(set(leaf_mtypes)) == len(leaf_mtypes)
+            assert reduce(or_, leaf_mtypes, MuType({})) == mtype
 
-            if len(key_mtypes) > 1:
-                assert reduce(and_, key_mtypes).is_empty()
+            if len(leaf_mtypes) == 0:
+                assert mtype.is_empty()
+            elif len(leaf_mtypes) == 1:
+                assert leaf_mtypes[0] == mtype
+
+            else:
+                assert reduce(and_, leaf_mtypes).is_empty()
 
         for mtype1, mtype2 in combn(mtypes, 2):
-            assert ((sorted(MuType(k) for k in mtype1.subkeys())
-                     == sorted(MuType(k) for k in mtype2.subkeys()))
+            assert ((sorted(MuType(k) for k in mtype1.leaves())
+                     == sorted(MuType(k) for k in mtype2.leaves()))
                     == (mtype1 == mtype2))
 
     def test_state(self, mtypes):
@@ -239,12 +244,11 @@ class TestCaseIter:
     def test_iter(self, mtypes):
         """Can we iterate over the sub-types in a MuType?"""
         for mtype in mtypes:
-            assert (len(mtype.subkeys()) >= len(tuple(mtype.subtype_iter()))
-                    >= len(tuple(mtype.child_iter())))
+            assert (len(tuple(mtype.subtype_iter()))
+                    == len(tuple(mtype.label_iter())))
 
-    def test_len(self, mtypes):
-        assert ([len(mtype) for mtype in mtypes]
-                == [1, 1, 1, 1, 2, 2, 1, 3, 1, 1])
+            assert (len(mtype.leaves()) >= len(tuple(mtype.subtype_iter()))
+                    >= len(tuple(mtype.child_iter())))
 
 
 class TestCaseSorting:

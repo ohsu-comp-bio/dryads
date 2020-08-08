@@ -234,22 +234,20 @@ class MuType(object):
         """Returns an iterator over the unique labels at this level."""
         return iter(lbl for lbls in self._child for lbl in lbls)
 
-    def __len__(self):
-        """Returns the number of unique category labels in the MuType.
+    def leaves(self):
+        """Gets all of the possible subsets of this MuType that contain
+           exactly one of the leaf properties."""
+        mkeys = []
 
-        Examples:
-            >>> len(MuType({('Gene', 'KRAS'): None}))
-                1
-            >>> len(MuType({('Gene', ('BRAF', 'TP53')): None}))
-                2
-            >>> len(MuType({('Gene', 'TTN'): {('Form', 'Nonsense'): None}}))
-                1
-            >>> len(MuType({('Gene', 'AR'): {('Exon', '2/87'): None},
-            >>>             ('Gene', 'MUC16'): {('Exon', '4/8'): None}}))
-                2
+        for lbls, tp in self._child.items():
+            if tp is None:
+                mkeys += [{(self.cur_level, lbl): None} for lbl in lbls]
 
-        """
-        return len(tuple(self.label_iter()))
+            else:
+                mkeys += [{(self.cur_level, lbl): sub_tp}
+                          for lbl in lbls for sub_tp in tp.leaves()]
+
+        return mkeys
 
     def __eq__(self, other):
         """Checks if one MuType is equal to another."""
@@ -722,21 +720,6 @@ class MuType(object):
 
         """
         return MuType(mtree.allkey()) - self
-
-    def subkeys(self):
-        """Gets all of the possible subsets of this MuType that contain
-           exactly one of the leaf properties."""
-        mkeys = []
-
-        for lbls, tp in self._child.items():
-            if tp is None:
-                mkeys += [{(self.cur_level, lbl): None} for lbl in lbls]
-
-            else:
-                mkeys += [{(self.cur_level, lbl): sub_tp}
-                          for lbl in lbls for sub_tp in tp.subkeys()]
-
-        return mkeys
 
 
 class MutComb(object):

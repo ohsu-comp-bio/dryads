@@ -481,11 +481,6 @@ class MuTree(object):
 
         return new_str
 
-    def __len__(self):
-        """Returns the number of unique samples this MuTree contains."""
-
-        return len(self.get_samples())
-
     def sort_iter(self):
         """Iterates through the branches of the tree, ordering mutation 
            attributes where possible."""
