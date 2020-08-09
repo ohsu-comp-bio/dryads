@@ -10,25 +10,42 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
 
     Args:
         expr_mat (pd.DataFrame, shape = [n_samps, n_features])
-            -Omic dataset that will be used as input features for prediction.
+            Dataset containing -omic features that will be used as input
+            for prediction algorithms.
         var_df (pd.DataFrame, shape = [n_muts, n_fields])
-            A list of mutations present in the samples, with various fields
-            corresponding to mutation attributes.
+            A list of point mutations present in the samples, with fields such
+            as 'Gene', 'Form', and 'Exon' corresponding to various
+            mutation attributes.
 
-        mut_levels (iterable of list-like), optional
+        mut_levels (iterable of list-like)
             Which combinations of mutation attributes to use when creating
-            hierarchical representations of mutation data. Default is to
-            initialize with one tree that only sorts mutations by gene.
+            hierarchical representations of mutation data. For example:
+                - [('Gene', 'Form'), ('Gene', 'Exon', 'HGVSp')]
+                    This constructs two trees, each first dividing the
+                    mutations according to the gene they are associated with,
+                    One tree then further divides each gene-branch according
+                    the form of each mutation, eg.
+                        'PIK3CA' -> 'missense', 'TP53' -> 'frameshift'
+                    The other further subdivides by mutations' genomic
+                    location, eg.
+                        'PIK3CA' -> '21st Exon' -> 'H1047R'
+                        'TP53' -> '7th exon' -> 'R248Q'
+
+        copy_df (pd.DataFrame, shape = [n_copies, n_features])
+        gene_annot (dict)
+        leaf_annot (list-like)
 
         cv_seed (int), optional: Seed used for random sampling.
-        test_prop (float), optional: Proportion of cohort's samples that will
-                                     be used for testing. Default is to not
-                                     have a testing sub-cohort.
+        test_prop (float), optional:
+            Proportion of cohort's samples that will be used for testing.
+            Default is to not have a testing sub-cohort. Must be between 0 and
+            1 inclusive.
 
     Attributes:
         mtrees (:obj:`dict` of :obj:`MuTree`)
             Hierarchical representations of the mutations present in the
-            dataset, ordered according to combinations of mutation attributes.
+            dataset, ordered according to combinations of mutation attributes
+            as given by :arg:`mut_levels`.
 
     """
 
@@ -36,15 +53,17 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
                  expr_mat, var_df, mut_levels, copy_df=None, gene_annot=None,
                  leaf_annot=('PolyPhen', ), cv_seed=None, test_prop=0):
 
-        self.muts = var_df
+        self._muts = var_df
         self.gene_annot = gene_annot
-        self.leaf_annot = leaf_annot
+        self._leaf_annot = leaf_annot
         self.mtrees = dict()
 
         # reconciles attribute levels specific to copy number mutations with
         # those associated with point mutations
         if copy_df is not None:
-            self.muts = pd.concat([self.muts, copy_df], sort=True)
+            self._muts = self._muts.assign(Scale='Point')
+            self._muts = pd.concat([self._muts, copy_df.assign(Scale='Copy')],
+                                   sort=True)
 
             for i in range(len(mut_levels)):
                 if 'Scale' not in mut_levels[i]:
@@ -73,10 +92,9 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
         Args:
             lvls (list-like of :obj:`str`)
 
-
         """
-        self.mtrees[tuple(lvls)] = MuTree(self.muts, levels=lvls,
-                                          leaf_annot=self.leaf_annot)
+        self.mtrees[tuple(lvls)] = MuTree(self._muts, levels=lvls,
+                                          leaf_annot=self._leaf_annot)
 
     def find_pheno(self, mut):
         """Finds the tree that matches a given mutation object."""
@@ -100,6 +118,19 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
         return mtree_lvls
 
     def get_pheno(self, mut, samps=None):
+        """Gets the mutated status of a given list of samples in this cohort.
+
+        Args:
+            mut (MuType or MutComb)
+                A particular type of mutation or combination of mutations.
+            samps (:obj:`list` of :obj:`str`), optional
+                A list of samples which must only include samples belonging
+                to this cohort. Defaults to using all cohort samples.
+
+            Returns:
+                stat_list (:obj:`list` of :obj:`bool`)
+
+        """
         if not isinstance(mut, (MuType, MutComb)):
             raise TypeError("Unrecognized class of phenotype `{}`!".format(
                 type(mut)))
@@ -115,14 +146,14 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
 
         return [s in pheno_samps for s in samps]
 
-    def train_pheno(self, pheno, samps=None):
-        """Gets the mutation status of samples in the training cohort.
+    def train_pheno(self, mut, samps=None):
+        """Gets the binary vector of training samples' mutated status.
 
         Args:
-            mtype (:obj:`MuType` or :obj:`list` of :obj:`MuType`)
-                A particular type of mutation or list of types.
-            samps (:obj:`list` of :obj:`str`, optional)
-                A list of samples, of which those not in the training cohort
+            mut (MuType or MutComb)
+                A particular type of mutation or combination of mutations.
+            samps (:obj:`list` of :obj:`str`), optional
+                A list of samples of which those not in the training cohort
                 will be ignored. Defaults to using all the training samples.
 
         Returns:
@@ -134,16 +165,16 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
         else:
             samps = sorted(set(samps) & set(self.get_train_samples()))
 
-        return self.get_pheno(pheno, samps)
+        return self.get_pheno(mut, samps)
 
-    def test_pheno(self, pheno, samps=None):
-        """Gets the mutation status of samples in the testing cohort.
+    def test_pheno(self, mut, samps=None):
+        """Gets the binary vector of testing samples' mutated status.
 
         Args:
-            mtype (:obj:`MuType` or :obj:`list` of :obj:`MuType`)
-                A particular type of mutation or list of types.
-            samps (:obj:`list` of :obj:`str`, optional)
-                A list of samples, of which those not in the testing cohort
+            mut (MuType or MutComb)
+                A particular type of mutation or combination of mutations.
+            samps (:obj:`list` of :obj:`str`), optional
+                A list of samples of which those not in the testing cohort
                 will be ignored. Defaults to using all the testing samples.
 
         Returns:
@@ -155,8 +186,9 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
         else:
             samps = sorted(set(samps) & set(self.get_test_samples()))
 
-        return self.get_pheno(pheno, samps)
+        return self.get_pheno(mut, samps)
 
+    # TODO: make this into a generalized threshold-mutype phenotype function?
     def cna_pheno(self, cna_dict, samps):
         if self.copy_data is None:
             raise CohortError("Cannot retrieve copy number alteration "
@@ -182,7 +214,7 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
 
         return stat_list
 
-    def get_cis_genes(self, cis_lbl, mtype=None, cur_genes=None):
+    def get_cis_genes(self, cis_lbl, mut=None, cur_genes=None):
         """Identifies the genes located in the proximity of a given mutation.
 
         This is a utility method that applies the genomic annotation data
@@ -194,10 +226,12 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
 
         Args:
             cis_lbl (str), one of {'None', 'Self', 'Chrm'}
-                Return an empty set (None), the gene associated with the
-                mutation (Self), or all the genes on the same chromosome.
+                *<None> return an empty set regardless of other parameters
+                *<Self> return the set of gene(s) associated with the mutation
+                *<Chrm> return the set of genes on the same chromosome as any
+                        of the mutation's gene(s)
 
-            mtype (MuType), optional
+            mut (MuType or MutComb), optional
             cur_genes (list-like of :obj:`str`), optional
                 Instead of specifying a mutation, a set of genes can be given.
                 This function will then list the genes proximal to this set.
@@ -214,13 +248,13 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
                               "without loading an annotation dataset during "
                               "instantiation!")
 
-        if mtype is not None:
-            if mtype.cur_level != 'Gene':
+        if mut is not None:
+            if mut.cur_level != 'Gene':
                 raise ValueError("Cannot retrieve cis-affected genes for "
                                  "a mutation type not representing a "
                                  "subgrouping of a gene or set of genes!")
 
-            cur_genes = mtype.label_iter()
+            cur_genes = mut.label_iter()
 
         elif cur_genes is None:
             raise ValueError("One of `mtype` or `cur_genes` has to be "
