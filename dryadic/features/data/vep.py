@@ -1,3 +1,4 @@
+"""A wrapper for the Variant Effect Predictor command line tool."""
 
 import os
 import subprocess
@@ -5,11 +6,13 @@ from io import StringIO
 import pandas as pd
 
 
+# mapping from the columns returned by VEP to names consistent with `dryad`
 field_map = {
     'Uploaded_variation': "Sample", 'Allele': "VarAllele", 'Gene': "ENSGene",
-    'Protein_position': "Position",
+    'Protein_position': "Position", 'BIOTYPE': "Biotype",
     'SYMBOL': "Gene", 'EXON': "Exon", 'INTRON': "Intron",
     'POLYPHEN': "PolyPhen", 'DOMAINS': "Domains", 'VARIANT_CLASS': "Class",
+    'IMPACT': 'Impact'
     }
 
 # default pick order copied from uswest.ensembl.org/info/genome/variation
@@ -41,7 +44,15 @@ def process_variants(var_df, out_fields=None, cache_dir=None, temp_dir=None,
                      distance=5000, flag_pick=False,
                      consequence_choose='sort', forks=None,
                      buffer_size=1e4, vep_version=99, update_cache=False):
+    """
+    This module calls the VEP command line tool from inside of Python and
+    parses its output into a pandas dataframe for compatibility with the rest
+    of dryad.
 
+    Returns:
+        vep_df (pd.DataFrame)
+
+    """
     if out_fields is None:
         out_fields = ["Gene"]
 
@@ -67,6 +78,7 @@ def process_variants(var_df, out_fields=None, cache_dir=None, temp_dir=None,
             check=True
             )
 
+    # create table of mutation calls that will be used as input for VEP
     var_list = pd.DataFrame({
         'Chr': var_df.Chr, 'Start': var_df.Start, 'End': var_df.End,
         'Allele': ['/'.join([ref, tmr])
@@ -75,15 +87,19 @@ def process_variants(var_df, out_fields=None, cache_dir=None, temp_dir=None,
         'Strand': var_df.Strand, 'Sample': var_df.Sample
         }).sort_values(by=['Chr', 'Start', 'End'])
 
+    # reverse start and end positions on negative strand for
+    # compatibility with VEP input format
     ins_indx = var_df.RefAllele == '-'
     pos_dummy = var_list.loc[ins_indx, 'Start']
     var_list.loc[ins_indx, 'Start'] = var_list.loc[ins_indx, 'End']
     var_list.loc[ins_indx, 'End'] = pos_dummy
 
+    # create the temporary directory and store the input calls there
     subprocess.run(["mkdir", "-p", temp_dir], check=True)
     var_file = os.path.join(temp_dir, "vars.txt")
     var_list.to_csv(var_file, sep='\t', index=False, header=False)
 
+    # construct the command used to invoke VEP
     vep_subm = ["vep", "-i", var_file, "-o", "STDOUT", "-a", assembly,
                 "-s", species, "--cache", "--dir_cache", cache_dir,
                 "--distance", distance, "--no_stats", "--tab",
@@ -97,8 +113,8 @@ def process_variants(var_df, out_fields=None, cache_dir=None, temp_dir=None,
             raise ValueError("`forks` argument must be an integer describing "
                              "a number of compute cores!")
 
-    # these fields are both in the default VEP output and are to be
-    # returned by this wrapper no matter what arguments are given
+    # these fields are both in the default VEP output (i.e. without
+    # `--fields`) and are to be returned no matter what arguments are given
     vep_fields = ["Uploaded_variation", "Feature"]
 
     # these fields are in the default VEP output but are only returned by this
@@ -113,6 +129,8 @@ def process_variants(var_df, out_fields=None, cache_dir=None, temp_dir=None,
         vep_fields += ["Consequence"]
     if 'Position' in out_fields:
         vep_fields += ["Protein_position"]
+    if 'Impact' in out_fields:
+        vep_fields += ["IMPACT"]
 
     # these fields are also optionally returned but do not appear
     # in the default VEP output
@@ -161,6 +179,14 @@ def process_variants(var_df, out_fields=None, cache_dir=None, temp_dir=None,
     elif 'SIFT' in out_fields:
         vep_subm += ["--sift", "b"]
 
+    if 'Motif' in out_fields:
+        vep_subm += ["--regulatory"]
+        vep_fields += ["MOTIF_NAME", "MOTIF_POS"]
+
+    if 'Biotype' in out_fields:
+        vep_subm += ["--biotype"]
+        vep_fields += ["BIOTYPE"]
+
     if flag_pick:
         vep_subm += ["--flag_pick_allele_gene"]
         vep_fields += ["PICK"]
@@ -181,21 +207,27 @@ def process_variants(var_df, out_fields=None, cache_dir=None, temp_dir=None,
         if s[:2] != '##':
             break
 
+    else:
+        raise VariantEffectPredictorError("Malformed VEP output!")
+
+    # turn everything returned by VEP except the header into a dataframe
     vep_out[i] = vep_out[i].split('#')[1]
-    mut_df = pd.read_csv(StringIO('\n'.join(vep_out[i:])), sep='\t').rename(
+    vep_df = pd.read_csv(StringIO('\n'.join(vep_out[i:])), sep='\t').rename(
         columns=field_map)
 
+    # VEP allows for picking of consequences at the gene and transcript levels
+    # but not at the mutation call level, which is addressed here
     if consequence_choose is not None and 'Consequence' in out_fields:
-        conseq_lists = mut_df.Consequence.str.split(',')
+        conseq_lists = vep_df.Consequence.str.split(',')
 
         if consequence_choose == 'sort':
-            mut_df = mut_df.assign(Consequence=conseq_lists.apply(
+            vep_df = vep_df.assign(Consequence=conseq_lists.apply(
                 lambda vals: ','.join(sorted(
                     vals, key=lambda val: consequences.index(val)))
                 ))
 
         elif consequence_choose == 'pick':
-            mut_df = mut_df.assign(Consequence=conseq_lists.apply(
+            vep_df = vep_df.assign(Consequence=conseq_lists.apply(
                 lambda vals: sorted(
                     vals, key=lambda val: consequences.index(val))[0]
                 ))
@@ -204,17 +236,20 @@ def process_variants(var_df, out_fields=None, cache_dir=None, temp_dir=None,
             raise ValueError("Unrecognized value for `consequence_choose`, "
                              "must be one of {'sort', 'pick'}!")
 
+    # domains from all possible databases are returned by VEP as one
+    # `,`-delimited string for each mutation call and thus must be parsed
     if 'Domains' in out_fields:
-        domn_data = mut_df.Domains.str.split(',').apply(
+        domn_data = vep_df.Domains.str.split(',').apply(
             lambda dmns: [dmn.split(':') for dmn in dmns])
 
-        mut_df = pd.concat([
-            mut_df, pd.DataFrame(domn_data.apply(
+        # each domain database is given its own column in the returned table
+        vep_df = pd.concat([
+            vep_df, pd.DataFrame(domn_data.apply(
                 lambda dmns: {dmn[0]: ':'.join(dmn[1:])
                               for dmn in dmns if dmn[0] != '-'}
                 ).tolist()).fillna('none').rename(
                     columns=lambda dmn: dmn.replace('_', '-'))
             ], axis=1)
 
-    return mut_df
+    return vep_df
 
