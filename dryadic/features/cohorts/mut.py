@@ -31,7 +31,11 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
                         'PIK3CA' -> '21st Exon' -> 'H1047R'
                         'TP53' -> '7th exon' -> 'R248Q'
 
-        copy_df (pd.DataFrame, shape = [n_copies, n_features])
+        copy_df (pd.DataFrame, shape = [n_copies, n_features]), optional
+            A list of copy number alterations to consider alongside the point
+            mutations. An attribute `Scale` will be added on top of the given
+            combinations to create separate branches for CNAs and variants.
+
         gene_annot (dict)
         leaf_annot (list-like)
 
@@ -146,48 +150,6 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
 
         return [s in pheno_samps for s in samps]
 
-    def train_pheno(self, mut, samps=None):
-        """Gets the binary vector of training samples' mutated status.
-
-        Args:
-            mut (MuType or MutComb)
-                A particular type of mutation or combination of mutations.
-            samps (:obj:`list` of :obj:`str`), optional
-                A list of samples of which those not in the training cohort
-                will be ignored. Defaults to using all the training samples.
-
-        Returns:
-            stat_list (:obj:`list` of :obj:`bool`)
-
-        """
-        if samps is None:
-            samps = self.get_train_samples()
-        else:
-            samps = sorted(set(samps) & set(self.get_train_samples()))
-
-        return self.get_pheno(mut, samps)
-
-    def test_pheno(self, mut, samps=None):
-        """Gets the binary vector of testing samples' mutated status.
-
-        Args:
-            mut (MuType or MutComb)
-                A particular type of mutation or combination of mutations.
-            samps (:obj:`list` of :obj:`str`), optional
-                A list of samples of which those not in the testing cohort
-                will be ignored. Defaults to using all the testing samples.
-
-        Returns:
-            stat_list (:obj:`list` of :obj:`bool`)
-
-        """
-        if samps is None:
-            samps = self.get_test_samples()
-        else:
-            samps = sorted(set(samps) & set(self.get_test_samples()))
-
-        return self.get_pheno(mut, samps)
-
     # TODO: make this into a generalized threshold-mutype phenotype function?
     def cna_pheno(self, cna_dict, samps):
         if self.copy_data is None:
@@ -276,8 +238,68 @@ class BaseMutationCohort(PresenceCohort, UniCohort):
         return ex_genes
 
     def data_hash(self):
-        """Generates a unique tag of the expression and mutation datasets."""
-        return super().data_hash(), hash(tuple(sorted(self.mtrees.items())))
+        return {gene: round(expr_val, 2)
+                for gene, expr_val in sorted(super().data_hash())}
+
+    def merge(self, other, use_genes=None):
+        """Compares, adds mutation trees constructed from the same cohort."""
+
+        if not isinstance(other, BaseMutationCohort):
+            return NotImplemented
+
+        if other.data_hash() != self.data_hash():
+            raise ValueError("Cohorts have mismatching expression datasets!")
+        if other.gene_annot != self.gene_annot:
+            raise ValueError("Cohorts have mismatching genomic annotations!")
+        if other._leaf_annot != self._leaf_annot:
+            raise ValueError("Cohorts have mismatching variant annotations!")
+
+        # for each mutation tree in the cohort to be merged, check if there is
+        # already a tree for the same mutation attributes in this cohort...
+        for mut_lvls, mtree in other.mtrees.items():
+            if mut_lvls in self.mtrees:
+                if hash(mtree) != hash(self.mtrees[mut_lvls]):
+                    raise ValueError("Cohorts have mismatching mutation "
+                                     "trees at levels `{}`!".format(mut_lvls))
+
+            # ...if there isn't, just add the tree to this cohort
+            else:
+                self.mtrees[mut_lvls] = mtree
+
+        # this defines a unique merge key for each mutation in the cohorts
+        merge_cols = {'Sample', 'Feature', 'Location', 'VarAllele',
+                      'Gene', 'Scale', 'Copy'}
+
+        # removes the columns in the mutation data to be merged that are
+        # neither in the merge key nor novel to the mutations to be merged
+        other_cols = set(other._muts.columns)
+        other_cols -= set(self._muts.columns
+                          & other._muts.columns) - merge_cols
+
+        if use_genes:
+            self._muts = self._muts.loc[
+                self._muts.Gene.isin(set(use_genes))]
+            other._muts = other._muts.loc[
+                other._muts.Gene.isin(set(use_genes))]
+
+        self._muts = self._muts.merge(other._muts[other_cols],
+                                      how='outer', on=tuple(merge_cols),
+                                      validate='one_to_one')
+
+        # check if we can recreate the mutation trees in the assimilated
+        # cohort from scratch using the merged mutation data in this cohort
+        for mut_lvls, mtree in other.mtrees.items():
+            test_tree = MuTree(self._muts, mut_lvls,
+                               leaf_annot=other._leaf_annot)
+
+            for gene, gene_tree in mtree:
+                if not use_genes or gene in set(use_genes):
+                    if hash(gene_tree) != hash(test_tree[gene]):
+                        raise ValueError(
+                            "Cohorts have internally inconsistent mutation "
+                            "datasets for gene {} at levels `{}`!".format(
+                                gene, mut_lvls)
+                            )
 
 
 class BaseCopyCohort(ValueCohort, UniCohort):
