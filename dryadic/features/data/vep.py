@@ -84,7 +84,7 @@ def process_variants(var_df, out_fields=None, cache_dir=None, temp_dir=None,
         'Allele': ['/'.join([ref, tmr])
                    for ref, tmr in zip(var_df.RefAllele.values,
                                        var_df.VarAllele.values)],
-        'Strand': var_df.Strand, 'Sample': var_df.Sample
+        'Strand': '+', 'Sample': var_df.Sample
         }).sort_values(by=['Chr', 'Start', 'End'])
 
     # reverse start and end positions on negative strand for

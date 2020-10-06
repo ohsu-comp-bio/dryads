@@ -37,7 +37,7 @@ class Cohort(object):
             test_prop, test_samps)
 
     @abstractmethod
-    def get_samples(self, include_samps=None, exclude_samps=None):
+    def get_samples(self):
         """Retrieves the samples for which -omic data is available."""
 
     @abstractmethod
@@ -126,6 +126,10 @@ class Cohort(object):
         """Retrieval of a subset of the -omic dataset."""
 
         return self._omic_data
+
+    @abstractmethod
+    def get_pheno(self, pheno, samps):
+        """Gets the phenotypic status of a list of samples in this cohort."""
 
     @abstractmethod
     def train_pheno(self, pheno, samps=None):
@@ -355,13 +359,45 @@ class UniCohort(Cohort):
 
         return self._omic_data.loc[samps, feats]
 
-    @abstractmethod
     def train_pheno(self, pheno, samps=None):
-        return np.array([])
+        """Gets the vector of training sample statuses for a phenotype.
 
-    @abstractmethod
+        Args:
+            pheno
+            samps (:obj:`list` of :obj:`str`), optional
+                A list of samples of which those not in the training cohort
+                will be ignored. Defaults to using all the training samples.
+
+        Returns:
+            stat_list (list)
+
+        """
+        if samps is None:
+            samps = self.get_train_samples()
+        else:
+            samps = sorted(set(samps) & set(self.get_train_samples()))
+
+        return self.get_pheno(pheno, samps)
+
     def test_pheno(self, pheno, samps=None):
-        return np.array([])
+        """Gets the vector of testing sample statuses for a phenotype.
+
+        Args:
+            pheno
+            samps (:obj:`list` of :obj:`str`), optional
+                A list of samples of which those not in the testing cohort
+                will be ignored. Defaults to using all the testing samples.
+
+        Returns:
+            stat_list (list)
+
+        """
+        if samps is None:
+            samps = self.get_test_samples()
+        else:
+            samps = sorted(set(samps) & set(self.get_test_samples()))
+
+        return self.get_pheno(pheno, samps)
 
     def data_hash(self):
         return tuple(sorted(dict(self._omic_data.sum().round(5)).items()))
@@ -377,18 +413,9 @@ class PresenceCohort(Cohort):
     """
 
     @abstractmethod
-    def train_pheno(self, pheno, samps=None):
+    def get_pheno(self, pheno, samps):
         """Returns the binary labels corresponding to the presence of
-           a phenotype for each of the samples in the training sub-cohort.
-
-        Returns:
-            pheno_vec (:obj:`array-like` of :obj:`bool`)
-        """
-
-    @abstractmethod
-    def test_pheno(self, pheno, samps=None):
-        """Returns the binary labels corresponding to the presence of
-           a phenotype for each of the samples in the testing sub-cohort.
+           a phenotype for each of the given samples.
 
         Returns:
             pheno_vec (:obj:`array-like` of :obj:`bool`)
@@ -435,18 +462,9 @@ class ValueCohort(Cohort):
     """
 
     @abstractmethod
-    def train_pheno(self, pheno, samps=None):
-        """Returns the continuous scores corresponding to the value of
-           a phenotype for each of the samples in the training sub-cohort.
-
-        Returns:
-            pheno_vec (:obj:`array-like` of :obj:`float`)
-        """
-
-    @abstractmethod
-    def test_pheno(self, pheno, samps=None):
-        """Returns the continuous scores corresponding to the value of
-           a phenotype for each of the samples in the testing sub-cohort.
+    def get_pheno(self, pheno, samps):
+        """Returns the continuous labels corresponding to the value of
+           a phenotype for each of the given samples.
 
         Returns:
             pheno_vec (:obj:`array-like` of :obj:`float`)
