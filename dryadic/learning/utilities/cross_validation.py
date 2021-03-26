@@ -191,6 +191,7 @@ def check_consistent_omic_length(omic, pheno):
 def _omic_fit_and_predict(estimator, X, y, train, test,
                           verbose, fit_params, lbl_type):
 
+    #TODO: _index_param_values is deprecated in newer versions of scikit-learn
     fit_params = fit_params if fit_params is not None else {}
     fit_params = dict([(k, _index_param_value(X, v, train))
                       for k, v in fit_params.items()])

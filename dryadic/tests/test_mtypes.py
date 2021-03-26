@@ -8,7 +8,6 @@ See Also:
 Author: Michal Grzadkowski <grzadkow@ohsu.edu>
 """
 
-import pytest
 from ..features.mutations import MuType
 from .resources import mutypes
 from ..utils import powerset_slice
@@ -99,7 +98,7 @@ def mtype_generator(mtypes_param):
     return mtypes, id_str
 
 
-class TestCaseInit(object):
+class TestCaseInit:
     """Tests for proper instatiation of MuTypes from type dictionaries."""
 
     def test_child(self):

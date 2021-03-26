@@ -8,14 +8,23 @@ Author: Michal Grzadkowski <grzadkow@ohsu.edu>
 
 """
 
-import pytest
 from ..features.mutations import MuType, MuTree
 from .test_mtypes import mtype_generator
-from .test_cohorts import load_muts
 
+import os
 import pandas as pd
 from itertools import product, chain
 from itertools import combinations as combn
+
+
+def load_muts(muts_lbl):
+    return pd.read_csv(
+        os.path.join(os.path.dirname(__file__), 'resources',
+                     "muts_{}.tsv".format(muts_lbl)),
+        engine='python', sep='\t', comment='#',
+        names=['Gene', 'Form', 'Sample', 'Protein', 'Transcript', 'Exon',
+               'ref_count', 'alt_count', 'PolyPhen']
+        )
 
 
 def pytest_generate_tests(metafunc):
@@ -166,7 +175,7 @@ def mtree_generator(mut_df, mut_lvls=None):
     return mtree
 
 
-class TestCaseInit(object):
+class TestCaseInit:
     """Tests for basic functionality of MuTrees."""
 
     params = {
@@ -269,7 +278,7 @@ class TestCaseInit(object):
             assert mtree.allkey(lvl_set) == lvl_key
 
 
-class TestCaseMuTypeSamples(object):
+class TestCaseMuTypeSamples:
     """Tests for using MuTypes to access samples in MuTrees."""
 
     params = {
@@ -328,7 +337,7 @@ class TestCaseMuTypeSamples(object):
                     == set(muts.Sample[muts.Form.isin([frm1, frm2])]))
 
 
-class TestCaseCustomLevels(object):
+class TestCaseCustomLevels:
     """Tests for custom mutation levels."""
 
     params = {
@@ -345,4 +354,32 @@ class TestCaseCustomLevels(object):
             == set(muts.Sample[muts.Form.isin(['Frame_Shift_Ins',
                                                'Frame_Shift_Del'])])
             )
+
+
+class TestCaseSubtree:
+    """Tests the pruning operation on mutation trees."""
+
+    params = {
+        'muts': ['big'],
+        'mut_lvls': [('Gene', 'Form_base'), ('Gene', 'Form_base', 'Exon')]
+        }
+
+    def test_samples(self, muts, mtree, mut_lvls):
+        old_samps = mtree.get_samples()
+
+        for k in range(7):
+            new_samps = {samp for i, samp in enumerate(old_samps)
+                         if i % 7 == k}
+            stree = mtree.subtree(new_samps)
+
+            assert old_samps == mtree.get_samples()
+            assert new_samps == stree.get_samples()
+
+    def test_prune(self, muts, mtree, mut_lvls):
+        while len(mtree.get_samples()) > 0:
+            old_samps = mtree.get_samples()
+            new_samps = set(list(old_samps)[:-1])
+            mtree = mtree.subtree(new_samps)
+
+            assert len(mtree.get_samples()) == len(old_samps) - 1
 

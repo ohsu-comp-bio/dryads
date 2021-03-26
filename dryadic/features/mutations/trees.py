@@ -8,8 +8,10 @@ import os
 from functools import reduce
 from itertools import combinations as combn
 from itertools import product
+
 from operator import or_
 from re import sub as gsub
+from copy import deepcopy
 
 from math import log10, floor
 from sklearn.cluster import MeanShift
@@ -568,13 +570,13 @@ class MuTree(object):
         return ant_dict
 
     def subtree(self, samps):
-        """Modifies the MuTree in place so that it only has the given samples.
+        """Returns a pruned MuTree that only has the given samples.
 
         Args:
             samps (list or set)
 
         Returns:
-            self
+            stree (MuTree)
 
         Examples:
             >>> # remove a sample from the tree
@@ -582,9 +584,9 @@ class MuTree(object):
             >>> new_tree = mtree.subtree(mtree.get_samples() - {'TCGA-04'})
 
         """
-        new_child = self._child.copy()
-        for nm, mut in self:
+        new_child = deepcopy(self._child)
 
+        for nm, mut in self:
             if isinstance(mut, MuTree):
                 new_samps = mut.get_samples() & set(samps)
 
@@ -593,19 +595,19 @@ class MuTree(object):
                 else:
                     del(new_child[nm])
 
-            elif isinstance(mut, frozenset):
-                new_samps = mut & frozenset(samps)
+            else:
+                new_samps = {samp: v for samp, v in mut.items()
+                             if samp in samps}
 
                 if new_samps:
                     new_child[nm] = new_samps
                 else:
                     del(new_child[nm])
 
-            else:
-                pass
+        stree = deepcopy(self)
+        stree._child = new_child
 
-        self._child = new_child
-        return self
+        return stree
 
     def allkey(self, levels=None):
         """Gets the key corresponding to the MuType with all the branches.
@@ -833,7 +835,10 @@ class MuTree(object):
         """
         branch_mtypes = set()
         comb_mtypes = set()
-        #TODO: more error-checking for input values, e.g. sizes can't be zero
+
+        if not all(isinstance(csize, int) and csize > 0
+                   for csize in comb_sizes):
+            raise ValueError("Combination sizes must be positive integers!")
 
         if not isinstance(min_branch_size, str):
             branch_mtypes = self.branchtypes(

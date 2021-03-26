@@ -211,10 +211,8 @@ class MuType(object):
         """MuType hashes are defined in an analagous fashion to those of
            tuples, see for instance http://effbot.org/zone/python-hash.htm"""
         value = 0x163125 ^ len(self._child)
-
-        for lbls, tp in sorted(self._child.items(), key=lambda x: list(x[0])):
-            value += eval(hex((int(value) * 1000007) & 0xFFFFFFFF)[:-1])
-            value ^= hash(lbls) ^ hash(tp)
+        value *= hash(tuple(sorted(
+            self._child.items(), key=lambda x: sorted(x[0]))))
 
         if value == -1:
             value = -2
