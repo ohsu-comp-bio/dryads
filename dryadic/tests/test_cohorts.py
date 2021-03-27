@@ -1,138 +1,122 @@
 
-import os
-import sys
-base_dir = os.path.dirname(__file__)
-data_dir = os.path.join(base_dir, "resources")
-sys.path.extend([os.path.join(base_dir, '../..')])
+"""
+Unit tests for classes representing collections of -omic data collected on
+cohorts of samples.
 
+See Also:
+    :class:`dryadic.features.cohorts`: The class tested herein.
+
+Author: Michal Grzadkowski <grzadkow@ohsu.edu>
+"""
+
+from ..features.mutations import MuType
+from .test_mtrees import load_muts
 from dryadic.features.cohorts.base import UniCohort
 from dryadic.features.cohorts import BaseMutationCohort
-from dryadic.features.mutations import MuType
 
 import numpy as np
 import pandas as pd
-from itertools import combinations as combn
+
+import os
+import random
+from string import ascii_uppercase as LETTERS
+from itertools import product
 
 
 def load_omic_data(data_lbl):
-    return pd.read_csv(os.path.join(data_dir, "{}.txt.gz".format(data_lbl)),
+    return pd.read_csv(os.path.join(os.path.dirname(__file__), 'resources',
+                                    "{}.txt.gz".format(data_lbl)),
                        sep='\t', index_col=0)
 
 
-def load_muts(muts_lbl):
-    return pd.read_csv(
-        os.path.join(os.path.dirname(__file__), 'resources',
-                     "muts_{}.tsv".format(muts_lbl)),
-        engine='python', sep='\t', comment='#',
-        names=['Gene', 'Form', 'Sample', 'Protein', 'Transcript', 'Exon',
-               'ref_count', 'alt_count', 'PolyPhen']
-        )
+def generate_cohort(muts_lbl, mut_lvls, **coh_args):
+    muts_df = load_muts(muts_lbl)
+    expr_data = generate_expr_data(set(muts_df.Sample))
+
+    return BaseMutationCohort(expr_data, muts_df, mut_lvls, **coh_args)
 
 
-def check_samp_split(cdata, expr_samps):
-    assert ((set(cdata.get_train_samples()) | set(cdata.get_test_samples()))
-            == set(expr_samps)), (
-                "Cohort training and testing samples should be a partition "
-                "of the original samples!"
-                )
+def generate_expr_data(samps, gene_count=1000, seed=None):
+    if seed:
+        random.seed(seed)
+        np.random.seed(seed)
+
+    genes = set()
+    while len(genes) < gene_count:
+        new_gene = ''.join(random.sample(LETTERS, random.choice([4, 5, 6])))
+
+        if new_gene not in genes:
+            genes |= {new_gene}
+
+    return pd.DataFrame(np.random.randn(len(samps), gene_count),
+                        index=samps, columns=genes)
 
 
-def main():
-    expr_data = load_omic_data('expr')
-    cdata = UniCohort(expr_data, cv_seed=None, test_prop=0)
-
-    assert len(cdata.get_train_samples()) == expr_data.shape[0]
-    assert len(cdata.get_test_samples()) == 0
-    assert len(cdata.get_samples()) == expr_data.shape[0]
-    assert set(cdata.get_train_samples()) == set(expr_data.index)
-    assert set(cdata.get_samples()) == set(expr_data.index)
-    check_samp_split(cdata, expr_data.index)
-
-    assert cdata.get_seed() is None
-    cdata.update_split(new_seed=23)
-    assert cdata.get_seed() == 23
-    assert len(cdata.get_train_samples()) == expr_data.shape[0]
-    assert len(cdata.get_test_samples()) == 0
-    assert len(cdata.get_samples()) == expr_data.shape[0]
-    check_samp_split(cdata, expr_data.index)
-
-    cdata.update_split(new_seed=551, test_prop=1./3)
-    assert cdata.get_seed() == 551
-    assert len(cdata.get_samples()) == expr_data.shape[0]
-    assert cdata.train_data(None)[0].shape == (expr_data.shape[0] * 2/3,
-                                               expr_data.shape[1])
-    check_samp_split(cdata, expr_data.index)
-
-    cdata.update_split(new_seed=551, test_samps=expr_data.index[:20])
-    assert cdata.test_data(None)[0].shape == (20, expr_data.shape[1])
-    check_samp_split(cdata, expr_data.index)
-
-    mut_data = load_omic_data('variants')
-    cdata = BaseMutationCohort(
-        expr_data, mut_data,
-        mut_levels=[['Form', 'Exon', 'Location'], ['Exon', 'Form_base']],
-        mut_genes=['TP53'], cv_seed=139, test_prop=0.2
-        )
-
-    assert cdata.get_seed() == 139
-    assert len(cdata.get_samples()) == expr_data.shape[0]
-    check_samp_split(cdata, expr_data.index)
-    assert len(cdata.mtrees) == 2
-    assert (cdata.muts.Gene == 'TP53').all()
-    assert cdata.data_hash() == cdata.data_hash()
-
-    for exn1, exn2 in combn(set(mut_data.Exon[mut_data.Gene == 'TP53']), 2):
-        mtype = MuType({('Exon', (exn1, exn2)): None})
-
-        train_expr, train_phn = cdata.train_data(mtype)
-        assert len(cdata.mtrees) == 2
-        assert train_phn.shape == (len(cdata.get_train_samples()),)
-        assert train_expr.shape == (len(cdata.get_train_samples()),
-                                    len(cdata.get_features()))
-
-        test_expr, test_phn = cdata.test_data(mtype)
-        assert len(cdata.mtrees) == 2
-        assert (set(train_expr.index) & set(test_expr.index)) == set()
-        assert ((set(train_expr.index) | set(test_expr.index))
-                == set(cdata.get_samples()))
-        assert sorted(train_expr.columns) == sorted(test_expr.columns)
-
-        train_mut_smps = np.array(cdata.get_train_samples())[train_phn]
-        test_mut_smps = np.array(cdata.get_test_samples())[test_phn]
-        assert (set(train_mut_smps) & set(test_mut_smps)) == set()
-
-        use_muts = mut_data.loc[(mut_data.Gene == 'TP53')
-                                & mut_data.Exon.isin([exn1, exn2])]
-        assert (sorted((set(train_mut_smps) | set(test_mut_smps)))
-                == sorted(set(use_muts.Sample)))
-
-        for samp, lf_ant in mtype.get_leaf_annot(
-                cdata.mtrees['Exon', 'Form_base'], ['PolyPhen']).items():
-            assert (set(lf_ant['PolyPhen'])
-                    == set(use_muts.loc[use_muts.Sample
-                                        == samp].PolyPhen.tolist()))
-
-    cdata = BaseMutationCohort(
-        expr_data, mut_data, mut_levels=[['Domain_Pfam', 'Exon']],
-        mut_genes=['TP53'], domain_dir=data_dir, test_prop=0, cv_seed=7753
-        )
-
-    assert (len(cdata.mtrees['Domain_Pfam', 'Exon']['none'].get_samples())
-            == 2), ("Exactly two samples should have mutations "
-                    "not overlapping a Pfam domain!")
-
-    assert (len(cdata.mtrees['Domain_Pfam', 'Exon']['PF00870']['5/11'])
-            == 16), ("Exactly sixteen samples should have a Pfam "
-                     "Domain PF00870 mutation on the 5th Exon!")
-
-    assert (cdata.mutex_test(
-        MuType({('Domain_Pfam', 'PF00870'): None}),
-        MuType({('Domain_Pfam', 'none'): None}))) == (0, 1)
-    assert len(cdata.mtrees) == 1
-
-    print("All Cohort tests passed successfully!")
+def pytest_generate_tests(metafunc):
+    if hasattr(metafunc.cls, 'params'):
+        if isinstance(metafunc.cls.params, dict):
+            if set(metafunc.cls.params.keys()) == {'muts', 'mut_levels',
+                                                   'cv_seed', 'test_prop'}:
+                metafunc.parametrize(
+                    'cdata',
+                    [generate_cohort(muts_lbl, lvls,
+                                     cv_seed=cv_seed, test_prop=test_prop)
+                     for muts_lbl, lvls, cv_seed, test_prop
+                     in product(*[metafunc.cls.params[k]
+                                  for k in ['muts', 'mut_levels',
+                                            'cv_seed', 'test_prop']])],
+                    )
 
 
-if __name__ == '__main__':
-    main()
+class TestCaseUni:
+
+    def test_samps(self):
+        expr_data = load_omic_data('expr')
+        base_cdata = UniCohort(expr_data, cv_seed=None, test_prop=0)
+
+        for cv_seed in [None, 0, 23, 555]:
+            for test_prop in [0, 0.1, 0.2, 0.5]:
+                base_cdata.update_split(new_seed=cv_seed, test_prop=test_prop)
+                new_cdata = UniCohort(expr_data,
+                                      cv_seed=cv_seed, test_prop=test_prop)
+
+                for cdata in [base_cdata, new_cdata]:
+                    assert cdata.get_seed() == cv_seed
+                    assert len(cdata.get_samples()) == expr_data.shape[0]
+                    assert set(cdata.get_samples()) == set(expr_data.index)
+
+                    train_samps = cdata.get_train_samples()
+                    test_samps = cdata.get_test_samples()
+                    assert len(set(train_samps) & set(test_samps)) == 0
+                    assert (set(train_samps)
+                            | set(test_samps)) == set(expr_data.index)
+
+        base_cdata.update_split(new_seed=551, test_samps=expr_data.index[:20])
+        assert base_cdata.test_data(None)[0].shape == (20, expr_data.shape[1])
+
+
+class TestCaseInit:
+
+    params = {
+        'muts': ['medium'],
+        'mut_levels': [[['Gene', 'Form']], [['Gene', 'Protein']]],
+        'cv_seed': [0, 133, 9077, 77011], 'test_prop': [0, 0.25]
+        }
+
+    def test_init(self, cdata):
+        assert len(cdata.mtrees) == 1
+
+    def test_pheno(self, cdata):
+        mtype_dict = {lvls: mtree.combtypes(comb_sizes=(1, ),
+                                            min_type_size=1)
+                      for lvls, mtree in cdata.mtrees.items()}
+
+        train_samps = set(cdata.get_train_samples())
+        for lvls, mtypes in mtype_dict.items():
+            assert len(mtypes) > 1
+
+            for mtype in mtypes:
+                mtype_samps = mtype.get_samples(cdata.mtrees[lvls])
+                train_expr, train_pheno = cdata.train_data(mtype)
+                assert train_pheno.sum() == len(mtype_samps & train_samps)
 
